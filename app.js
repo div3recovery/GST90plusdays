@@ -39,7 +39,7 @@ function api(fn) {
 }
 
 /* ---------------- navigation ---------------- */
-var VIEWS = ['sStart', 'sLogin', 'sRole', 'sHome', 'sCat', 'sCatForm', 'sLedger', 'sList', 'sRec', 'sAct', 'sCase', 'sAdmin', 'sDash', 'sOff', 'sRev'];
+var VIEWS = ['sStart', 'sLogin', 'sRole', 'sHome', 'sCat', 'sCatForm', 'sLedger', 'sList', 'sRec', 'sAct', 'sCase', 'sAdmin', 'sDash', 'sOff', 'sRev', 'sLists'];
 var REFRESH = {
   sHome: function () { renderHome(); }, sCat: function () { renderCat(); }, sLedger: function () { renderLedger(); },
   sList: function () { renderList(); }, sCase: function () { if (S.cur) openCase(S.cur.demandId, true); }, sDash: function () { renderReport(); }
@@ -1214,4 +1214,210 @@ function dlLists() {
     X.writeFile(wb, ('Category-Lists-' + d.division + '-' + d.monthLabel).replace(/[^\w-]+/g, '-') + '.xlsx');
     busy(false); toast('Category lists downloaded ✓');
   }).catch(function (e) { busy(false); toast(String(e)); });
+}
+
+/* ================= ADMIN: IMPORT ENTRIES OF THE OLD APP (Excel) ================= */
+var OI = {};
+function oiPick() { $('oiFile').value = ''; $('oiFile').click(); }
+function oiFileChosen(inp) {
+  var f = inp.files && inp.files[0]; if (!f) return;
+  $('oiName').textContent = f.name; $('oiPrev').innerHTML = ''; busy(true);
+  loadXlsx().then(function (X) {
+    return f.arrayBuffer().then(function (buf) {
+      var wb = X.read(buf, { type: 'array' }), table = null;
+      var names = wb.SheetNames.slice().sort(function (a, b) { return (b === 'Updates') - (a === 'Updates'); });
+      names.some(function (n) {
+        var rows = X.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' });
+        if (rows.slice(0, 5).some(function (r) { var k = r.map(function (c) { return String(c).trim(); }); return k.indexOf('Timestamp') >= 0 && k.indexOf('Demand ID') >= 0; })) { table = rows; return true; }
+        return false;
+      });
+      if (!table) throw 'The tab "Updates" (with Timestamp and Demand ID) was not found. Download the OLD app\'s Google Sheet as Excel and choose that file.';
+      var hi = table.findIndex(function (r) { return r.map(function (c) { return String(c).trim(); }).indexOf('Timestamp') >= 0; });
+      var dcols = table[hi].map(function (c, i) { return ['Timestamp', 'Spot Visit Date', 'Step Date', 'Recovery Date'].indexOf(String(c).trim()) >= 0 ? i : -1; }).filter(function (i) { return i >= 0; });
+      var wall = function (v) {                        // Excel date number -> "yyyy-mm-ddThh:mm:ss" (as shown in the sheet)
+        var t = new Date(Math.round((v - 25569) * 864e5)), p = function (n) { return ('0' + n).slice(-2); };
+        return t.getUTCFullYear() + '-' + p(t.getUTCMonth() + 1) + '-' + p(t.getUTCDate()) + 'T' + p(t.getUTCHours()) + ':' + p(t.getUTCMinutes()) + ':' + p(t.getUTCSeconds());
+      };
+      OI.table = table.slice(hi).map(function (r, k) { return k === 0 ? r : r.map(function (c, i) { return dcols.indexOf(i) >= 0 && typeof c === 'number' && c > 20000 ? wall(c) : c; }); });
+      return api('previewOldImport', S.pin, OI.table);
+    });
+  }).then(function (p) { busy(false); OI.prev = p; renderOiPrev(); })
+    .catch(function (e) { busy(false); $('oiPrev').innerHTML = '<div class="ban" style="margin:10px 0 0;background:#FBE1E3;border-color:#F3C3C8;color:#A1182B"><b>' + ic('alert') + ' File not accepted</b>' + esc(String(e)) + '</div>'; });
+}
+function renderOiPrev() {
+  var p = OI.prev, html = '<div class="upbox"><div class="uph">' + ic('refresh') + '<div><b>Old app entries after ' + esc(p.from) + '</b><span>' + (p.rows ? p.rows + (p.rows === 1 ? ' new entry' : ' new entries') + ' · up to ' + esc(p.to) : 'nothing new') + '</span></div></div>';
+  if (!p.rows) { $('oiPrev').innerHTML = html + '<div class="upw">No entries after the last import. Nothing to do.</div></div>'; return; }
+  html += '<div class="upc"><span><b>' + p.rec + '</b>recoveries</span><span><b>₹' + short(p.recAmt) + '</b>recovered</span><span><b>' + p.act + '</b>actions</span><span><b>' + p.led + '</b>ledger</span></div>';
+  if (p.dup) html += '<div class="upw">' + p.dup + ' entries are already in this app – they will be skipped.</div>';
+  if (p.sample.length) html += '<table class="upt"><tr><th>Date</th><th>Taxpayer · STO</th><th>Amount</th></tr>' + p.sample.map(function (x) { return '<tr><td>' + esc(x.d.slice(0, 5)) + '</td><td style="text-align:left">' + esc(x.n) + '<br><small style="color:#5E6580">' + esc(shortU(x.u)) + ' · ' + esc(x.s) + ' · ' + esc(x.m) + '</small></td><td>₹' + short(x.a) + '</td></tr>'; }).join('') + '</table>';
+  var st = Object.keys(p.stos).sort();
+  if (st.length) html += '<div class="upw"><b>Entries by STO:</b> ' + st.map(function (k) { return esc(k.replace('Ghatak ', 'G-').replace(/ \([^)]*\)/, '')) + ' ' + p.stos[k]; }).join(' · ') + '</div>';
+  if (p.unmatched.length) html += '<div class="ban" style="margin:10px 0 0"><b>' + p.unmatched.length + ' entr' + (p.unmatched.length > 1 ? 'ies' : 'y') + ' for cases not in the current list</b>' + p.unmatched.slice(0, 10).map(esc).join('<br>') + (p.unmatched.length > 10 ? '<br>…' : '') + '<br>They are kept in the sheet "Old App Import".</div>';
+  html += '<button class="btn" onclick="oiApply()">' + ic('check') + ' Import ' + p.rows + ' entries</button></div>';
+  $('oiPrev').innerHTML = html;
+}
+function oiApply() {
+  if (!confirm('Import ' + OI.prev.rows + ' entries of the old app into this app?')) return;
+  busy(true);
+  api('applyOldImport', S.pin, OI.table).then(function (r) {
+    busy(false); OI = {}; $('oiName').textContent = 'No file chosen';
+    try { localStorage.removeItem('rec2_report'); } catch (e) {}
+    $('oiPrev').innerHTML = '<div class="ban ok" style="margin:10px 0 0"><b>' + ic('check') + ' Imported</b>' + r.rec + (r.rec === 1 ? ' recovery' : ' recoveries') + ' (₹' + short(r.recAmt) + ') · ' + clN(r.act, 'action') + ' · ' + r.led + (r.led === 1 ? ' ledger entry' : ' ledger entries') + (r.unmatched.length ? ' · ' + r.unmatched.length + ' not found (see sheet "Old App Import")' : '') + '</div>';
+  }).catch(function (e) { busy(false); toast(String(e)); });
+}
+
+/* ================= CASE LISTS (JC / DC / Unit Head / Admin) ================= */
+var CL = { tab: 'rec', sub: { rec: 'made', act: 'done', led: 'A', cat: 'Recoverable' }, unit: 'all', sto: 'all', type: 'all', akind: 'all', q: '', lim: 50 };
+function openCaseLists() {
+  var scope = S.role === 'unit' ? S.ownUnit : 'ALL'; busy(true);
+  api('getReview', S.role, S.ownUnit || '', S.pin, scope).then(function (d) {
+    busy(false); CL.d = d; CL.unit = S.role === 'unit' ? S.ownUnit : 'all'; CL.sto = 'all'; CL.lim = 50; CL.cache = {};
+    var rec = {}, act = {};
+    d.recs.forEach(function (r) { var x = rec[r.id] = rec[r.id] || { amt: 0, n: 0, d: '', m: '' }; x.amt += r.a; x.n++; if (r.d >= x.d) { x.d = r.d; x.m = r.m; } });
+    d.acts.forEach(function (a) { (act[a.id] = act[a.id] || []).push(a); });
+    Object.keys(act).forEach(function (k) { act[k].sort(function (a, b) { return a.d < b.d ? 1 : -1; }); });
+    CL.rec = rec; CL.act = act;
+    show('sLists', { mode: 'bar', t: 'Case lists', s: (scope === 'ALL' ? d.division : scope) + ' · ' + d.monthLabel });
+    clFilters(); renderCL();
+  }).catch(function (e) { busy(false); toast(String(e)); });
+}
+function clFilters() {
+  var d = CL.d, units = d.units.filter(function (u) { return d.cases.some(function (c) { return c.u === u; }); });
+  $('clUnit').innerHTML = (S.role === 'unit' ? '' : '<option value="all">All Units</option>') + units.map(function (u) { return '<option' + (u === CL.unit ? ' selected' : '') + '>' + esc(u) + '</option>'; }).join('');
+  clStoOpts();
+}
+function clStoOpts() {
+  var stos = rvSort(CL.d.cases.filter(function (c) { return CL.unit === 'all' || c.u === CL.unit; }).map(function (c) { return c.s; }).filter(function (s, i, a) { return a.indexOf(s) === i; }));
+  if (CL.unit === 'all') CL.sto = 'all';
+  $('clSto').innerHTML = '<option value="all">All STOs</option>' + (CL.unit === 'all' ? '' : stos.map(function (s) { return '<option' + (s === CL.sto ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join(''));
+  $('clSto').disabled = CL.unit === 'all';
+}
+function clSet(k, v) { CL[k] = v; CL.lim = 50; if (k === 'unit') clStoOpts(); if (k === 'tab') { $('clQ').value = ''; CL.q = ''; } renderCL(); }
+function clSub(v) { CL.sub[CL.tab] = v; CL.lim = 50; renderCL(); }
+function clBase() {
+  return CL.d.cases.filter(function (c) {
+    return (CL.unit === 'all' || c.u === CL.unit) && (CL.sto === 'all' || c.s === CL.sto) && (CL.type === 'all' || (CL.type === 'A' ? c.t === 'Active' : c.t !== 'Active'));
+  });
+}
+function clQ(list) {
+  var q = CL.q.trim().toLowerCase(); if (!q) return list;
+  return list.filter(function (c) { return (c.n + ' ' + c.g + ' ' + c.id).toLowerCase().indexOf(q) >= 0; });
+}
+function clWho(c) { return esc(shortU(c.u)) + ' · ' + esc(c.s) + ' · ' + esc(c.t); }
+function clRow(c, right, sub, rank) {
+  return '<div class="cl" onclick="clOpen(\'' + esc(c.id) + '\')">' + (rank ? '<span class="clr">' + rank + '</span>' : '') + '<div class="clm"><b>' + esc(c.n) + '</b><span>' + clWho(c) + '</span>' + (sub ? '<div class="cls">' + sub + '</div>' : '') + '</div><div class="clv">' + right + '</div></div>';
+}
+function renderCL() {
+  [].forEach.call($('clTabs').children, function (b) { b.classList.toggle('on', b.getAttribute('data-t') === CL.tab); });
+  var d = CL.d, base = clBase(), W = base.filter(function (c) { return c.c === 'Recoverable'; }), sub = CL.sub[CL.tab], pills = [], list = [], html = '', rows = [], cols = [], F = d.freshDays;
+  var P = function (k, t, n) { pills.push('<button class="pill' + (sub === k ? ' on' : '') + '" onclick="clSub(\'' + k + '\')">' + t + (n != null ? ' <em>' + n + '</em>' : '') + '</button>'); };
+  var sum = function (a, f) { return a.reduce(function (s, x) { return s + f(x); }, 0); };
+  if (CL.tab === 'rec') {
+    var made = W.filter(function (c) { return CL.rec[c.id]; });
+    P('made', 'Recovery made', made.length); P('unit', 'By Unit'); P('sto', 'STO ranking'); P('none', 'Highest pending · no recovery');
+    if (sub === 'made') {
+      list = clQ(made).sort(function (a, b) { return CL.rec[b.id].amt - CL.rec[a.id].amt; });
+      html = clHead(clN(list.length, 'case'), '₹' + short(sum(list, function (c) { return CL.rec[c.id].amt; })) + ' recovered');
+      html += list.slice(0, CL.lim).map(function (c, i) { var r = CL.rec[c.id]; return clRow(c, '<b class="grn">₹' + short(r.amt) + '</b><small>of ₹' + short(c.p) + '</small>', esc(r.m) + ' · ' + rvDmy(r.d) + (r.n > 1 ? ' · ' + r.n + ' entries' : ''), i + 1); }).join('');
+      cols = ['#', 'Unit', 'STO', 'Type', 'Demand ID', 'GSTIN', 'Legal Name', 'Pending (Rs)', 'Recovered this month (Rs)', 'Entries', 'Last mode', 'Last date'];
+      rows = list.map(function (c, i) { var r = CL.rec[c.id]; return [i + 1, c.u, c.s, c.t, c.id, c.g, c.n, c.p, r.amt, r.n, r.m, rvDmy(r.d)]; });
+    } else if (sub === 'unit' || sub === 'sto') {
+      var groups = {};
+      W.forEach(function (c) { var k = sub === 'unit' ? c.u : c.u + '|' + c.s; var g = groups[k] = groups[k] || { u: c.u, s: c.s, cases: 0, pend: 0, rec: 0, made: 0 }; g.cases++; g.pend += c.p; if (CL.rec[c.id]) { g.rec += CL.rec[c.id].amt; g.made++; } });
+      CL.groups = { sub: sub };
+      list = Object.keys(groups).map(function (k) { var g = groups[k]; g.tgt = g.pend * d.targetPct / 100; g.p = g.tgt ? g.rec * 100 / g.tgt : 0; return g; }).sort(function (a, b) { return b.rec - a.rec || b.p - a.p; });
+      CL.groups.list = list;
+      html = clHead(list.length + (sub === 'unit' ? ' Units' : ' STOs'), '₹' + short(sum(list, function (g) { return g.rec; })) + ' recovered');
+      html += list.map(function (g, i) {
+        return '<div class="cl" onclick="clGo(' + i + ')"><span class="clr' + (i < 3 && g.rec ? ' md md' + (i + 1) : '') + '">' + (i + 1) + '</span><div class="clm"><b>' + esc(sub === 'unit' ? g.u : shortU(g.u) + ' · ' + g.s) + '</b><span>' + g.made + ' of ' + g.cases + ' cases recovered · target ₹' + short(g.tgt) + '</span><div class="bar"><i style="width:' + Math.min(100, g.p).toFixed(0) + '%"></i></div></div><div class="clv"><b class="grn">₹' + short(g.rec) + '</b><small>' + g.p.toFixed(1) + '% of target</small></div></div>';
+      }).join('');
+      cols = ['#', 'Unit'].concat(sub === 'sto' ? ['STO'] : []).concat(['Recoverable cases', 'Cases with recovery', 'Pending (Rs)', 'Target (Rs)', 'Recovered (Rs)', '% of target']);
+      rows = list.map(function (g, i) { return [i + 1, g.u].concat(sub === 'sto' ? [g.s] : []).concat([g.cases, g.made, g.pend, Math.round(g.tgt), g.rec, Number(g.p.toFixed(1))]); });
+    } else {
+      list = clQ(W.filter(function (c) { return !CL.rec[c.id]; })).sort(function (a, b) { return b.p - a.p; });
+      html = clHead(clN(list.length, 'case') + ' without recovery', '₹' + short(sum(list, function (c) { return c.p; })) + ' pending');
+      html += list.slice(0, CL.lim).map(function (c, i) { return clRow(c, '<b>₹' + short(c.p) + '</b><small>pending</small>', 'Last action: ' + rvLast(c) + ' · ' + rvLed(c), i + 1); }).join('');
+      cols = ['#', 'Unit', 'STO', 'Type', 'Demand ID', 'GSTIN', 'Legal Name', 'Pending (Rs)', 'Ledger status'];
+      rows = list.map(function (c, i) { return [i + 1, c.u, c.s, c.t, c.id, c.g, c.n, c.p, c.lo ? ({ A: 'Adjustable', P: 'PMT-09', C: 'Credit only', B: 'Break-up needed', N: 'No balance' }[c.lg] || '') : 'Never checked']; });
+    }
+  } else if (CL.tab === 'act') {
+    var done = W.filter(function (c) { return CL.act[c.id]; }), kinds = {};
+    done.forEach(function (c) { CL.act[c.id].forEach(function (a) { var k = rvKind(a.a); kinds[k] = (kinds[k] || 0) + 1; }); });
+    P('done', 'Actions taken', done.length); P('none', 'No action this month', W.length - done.length);
+    if (sub === 'done') {
+      html += '<div class="clk"><select onchange="CL.akind=this.value;CL.lim=50;renderCL()"><option value="all">All action types</option>' + RV_ACT.map(function (k) { return kinds[k[0]] ? '<option value="' + esc(k[0]) + '"' + (CL.akind === k[0] ? ' selected' : '') + '>' + esc(k[0]) + ' (' + kinds[k[0]] + ')</option>' : ''; }).join('') + '</select></div>';
+      var hasK = function (c) { return CL.akind === 'all' || CL.act[c.id].some(function (a) { return rvKind(a.a) === CL.akind; }); };
+      list = clQ(done.filter(hasK)).sort(function (a, b) { return CL.act[b.id][0].d < CL.act[a.id][0].d ? -1 : 1; });
+      html += clHead(clN(list.length, 'case'), clN(sum(list, function (c) { return CL.act[c.id].length; }), 'action'));
+      html += list.slice(0, CL.lim).map(function (c) {
+        var A = CL.act[c.id];
+        return clRow(c, '<b>' + A.length + '</b><small>action' + (A.length > 1 ? 's' : '') + '</small>', A.slice(0, 3).map(function (a) { return '<span class="chipx">' + ic(rvIcon(a.a)) + ' ' + esc(rvStep(a.a)) + ' · ' + rvDmy(a.d).slice(0, 5) + '</span>'; }).join('') + (A.length > 3 ? ' +' + (A.length - 3) : '') + (A[0].r ? '<br><i class="clrm">' + esc(A[0].r) + '</i>' : ''));
+      }).join('');
+      cols = ['Unit', 'STO', 'Type', 'Demand ID', 'GSTIN', 'Legal Name', 'Pending (Rs)', 'Actions this month', 'Action', 'Date', 'Remarks', 'By'];
+      list.forEach(function (c) { CL.act[c.id].forEach(function (a) { rows.push([c.u, c.s, c.t, c.id, c.g, c.n, c.p, CL.act[c.id].length, a.a, rvDmy(a.d), a.r || '', a.b || '']); }); });
+    } else {
+      list = clQ(W.filter(function (c) { return !CL.act[c.id]; })).sort(function (a, b) { return b.p - a.p; });
+      html = clHead(clN(list.length, 'case') + ' without action', '₹' + short(sum(list, function (c) { return c.p; })) + ' pending');
+      html += list.slice(0, CL.lim).map(function (c) { return clRow(c, '<b>₹' + short(c.p) + '</b><small>pending</small>', 'Last action: ' + rvLast(c)); }).join('');
+      cols = ['Unit', 'STO', 'Type', 'Demand ID', 'GSTIN', 'Legal Name', 'Pending (Rs)', 'Last step', 'Last step date', 'Spot visit date'];
+      rows = list.map(function (c) { return [c.u, c.s, c.t, c.id, c.g, c.n, c.p, c.st, rvDmy(c.sd), rvDmy(c.sv)]; });
+    }
+  } else if (CL.tab === 'led') {
+    var due = function (c) { var x = rvDays(c.as, d.today); return c.lg === 'A' && x !== null && x >= d.setoffDays; };
+    var stale = function (c) { var x = rvDays(c.lo, d.today); return !c.lo || x >= F; };
+    var LG = [['A', 'Adjustable now', function (c) { return c.lg === 'A'; }], ['due', 'Set-off due ' + d.setoffDays + '+ days', due], ['P', 'PMT-09 needed', function (c) { return c.lg === 'P'; }],
+      ['C', 'Credit only (int./penalty)', function (c) { return c.lg === 'C'; }], ['B', 'Break-up needed', function (c) { return c.lg === 'B'; }], ['N', 'No balance', function (c) { return c.lo && c.lg === 'N'; }],
+      ['never', 'Never checked', function (c) { return !c.lo; }], ['stale', 'Not checked ' + F + '+ days', stale]];
+    LG.forEach(function (g) { P(g[0], g[1], W.filter(g[2]).length); });
+    var g = LG.find(function (x) { return x[0] === sub; }) || LG[0];
+    list = clQ(W.filter(g[2])).sort(function (a, b) { return (b.adj - a.adj) || (b.cash + b.cr - a.cash - a.cr) || (b.p - a.p); });
+    var adjT = sum(list, function (c) { return c.adj; });
+    html = clHead(clN(list.length, 'case'), adjT ? '₹' + short(adjT) + ' adjustable' : '₹' + short(sum(list, function (c) { return c.p; })) + ' pending');
+    html += list.slice(0, CL.lim).map(function (c) {
+      var x = rvDays(c.as, d.today), y = rvDays(c.lo, d.today);
+      var right = c.lg === 'A' ? '<b class="grn">₹' + short(c.adj) + '</b><small>' + (x !== null ? (x >= d.setoffDays ? '<span class="red">' + x + ' days</span>' : x + ' days') : '') + '</small>' : '<b>₹' + short(c.p) + '</b><small>pending</small>';
+      return clRow(c, right, c.lo ? 'Cash ₹' + short(c.cash) + ' · Credit ₹' + short(c.cr) + ' · checked ' + (y === 0 ? 'today' : y + ' days ago') + (c.na ? '<br><i class="clrm">' + esc(c.na) + '</i>' : '') : '<span class="red">Ledger never checked</span>');
+    }).join('');
+    cols = ['Unit', 'STO', 'Type', 'Demand ID', 'GSTIN', 'Legal Name', 'Pending (Rs)', 'Cash (Rs)', 'Credit (Rs)', 'Adjustable (Rs)', 'Adjustable since', 'Checked on', 'Reason not adjusted'];
+    rows = list.map(function (c) { return [c.u, c.s, c.t, c.id, c.g, c.n, c.p, c.lo ? c.cash : '', c.lo ? c.cr : '', c.adj, rvDmy(c.as), rvDmy(c.lo), c.na]; });
+  } else {
+    d.categories.forEach(function (k) { P(k, RV_CATS[k] || k, base.filter(function (c) { return c.c === k; }).length); });
+    list = clQ(base.filter(function (c) { return c.c === sub; })).sort(function (a, b) { return b.p - a.p; });
+    html = clHead(clN(list.length, 'case'), '₹' + short(sum(list, function (c) { return c.p; })) + ' pending');
+    html += list.slice(0, CL.lim).map(function (c) { return clRow(c, '<b>₹' + short(c.p) + '</b><small>pending</small>', c.cd ? esc(c.cd) : ''); }).join('');
+    cols = ['Unit', 'STO', 'Type', 'Demand ID', 'GSTIN', 'Legal Name', 'Pending (Rs)', 'Category', 'Details'];
+    rows = list.map(function (c) { return [c.u, c.s, c.t, c.id, c.g, c.n, c.p, c.c, c.cd]; });
+  }
+  if (list.length > CL.lim && !(CL.tab === 'rec' && (sub === 'unit' || sub === 'sto'))) html += '<button class="lnk" onclick="CL.lim+=100;renderCL()">Show more (' + (list.length - CL.lim) + ' more) ›</button>';
+  if (!list.length) html += '<div class="empty">No cases in this list</div>';
+  CL.xl = { cols: cols, rows: rows, name: ({ rec: 'Recovery', act: 'Actions', led: 'Ledger', cat: 'Category' }[CL.tab]) + '-' + (pills.length ? sub : '') };
+  $('clPills').innerHTML = pills.join('');
+  $('clSrch').classList.toggle('hide', CL.tab === 'rec' && (sub === 'unit' || sub === 'sto'));
+  $('clBody').innerHTML = html;
+}
+function clGo(i) {
+  var g = CL.groups.list[i]; if (!g) return;
+  if (S.role !== 'unit') { CL.unit = g.u; $('clUnit').value = g.u; }
+  clStoOpts(); CL.sto = CL.groups.sub === 'sto' ? g.s : 'all'; $('clSto').value = CL.sto;
+  CL.sub.rec = 'made'; CL.lim = 50; renderCL(); window.scrollTo(0, 0);
+}
+function rvIcon(s) { var k = rvKind(s); return { 'Spot visit': 'pin', 'Notice / reminder': 'mail', 'Bank attachment': 'bank', 'ITC set-off': 'swap', 'Third-party attachment': 'users', 'Stock attachment': 'box', 'Share / MF attachment': 'trend', 'Property attachment': 'home', 'RRC (other jurisdiction)': 'globe', 'Police complaint (FIR)': 'siren', 'Payment by taxpayer': 'card' }[k] || 'edit'; }
+function clN(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
+function clHead(a, b) { return '<div class="clh"><div><b>' + a + '</b><span>' + b + '</span></div><button onclick="clXl()">' + ic('download') + ' Excel</button></div>'; }
+function clXl() {
+  var x = CL.xl; if (!x || !x.rows.length) { toast('Nothing to download'); return; }
+  busy(true);
+  loadXlsx().then(function (X) {
+    var ws = X.utils.aoa_to_sheet([x.cols].concat(x.rows)); ws['!cols'] = x.cols.map(function (c) { return { wch: /Name/.test(c) ? 38 : /Unit/.test(c) ? 20 : /Remarks|Reason|Details|Action$/.test(c) ? 34 : 15 }; });
+    var wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'List');
+    var scope = (CL.unit === 'all' ? 'All-Units' : CL.unit) + (CL.sto === 'all' ? '' : '-' + CL.sto);
+    X.writeFile(wb, (x.name + '-' + scope + '-' + CL.d.monthLabel).replace(/[^\w-]+/g, '-') + '.xlsx'); busy(false);
+  }).catch(function (e) { busy(false); toast(String(e)); });
+}
+function clOpen(id) {
+  var c = CL.d.cases.find(function (x) { return x.id === id; }); if (!c) return;
+  var go = function (data) { S.unit = c.u; S.d = data; openCase(id); };
+  if (CL.cache[c.u]) return go(CL.cache[c.u]);
+  busy(true);
+  api('getCases', c.u, 'ALL', S.pin, S.role).then(function (data) { busy(false); CL.cache[c.u] = data; go(data); }).catch(function (e) { busy(false); toast(String(e)); });
 }

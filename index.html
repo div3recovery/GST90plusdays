@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600&family=Merriweather:wght@400;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="app.css">
 <script src="config.js"></script>
 </head>
@@ -49,7 +49,12 @@
     <button class="btn gold hide" id="installBtn" onclick="installApp()" style="margin-top:0">&#11015; Install as App on this phone</button>
     <p class="hint hide" id="installHint" style="margin:0">To install: Chrome menu <b>&#8942;</b> &rarr; <b>Add to Home screen</b> / <b>Install app</b></p>
   </div>
-  <div class="lux-foot"><img src="foot-bldg.webp" alt=""><span class="hdiv"><i></i></span><div>Developed by <b>Mehul Ranavasiya</b> &middot; Gandhinagar Division</div></div>
+  <div class="lux-foot"><img src="foot-bldg.webp" alt=""><div class="sigf">
+    <span class="hdiv"><i></i></span>
+    <div class="sigf-by">Designed &amp; Developed by</div>
+    <div class="sigf-name">Mehul Ranavasiya</div>
+    <div class="sigf-role">State Tax Inspector &middot; Division-3, Gandhinagar</div>
+  </div></div>
 </div>
 
 <!-- STO LOGIN -->
@@ -84,11 +89,23 @@
   <div class="lux-list" style="margin-top:6px">
     <button class="lux sm" onclick="openReview('unit')"><span class="ib"><svg class="ic"><use href="#i-sheet"/></svg></span><span class="lt"><b>Unit Review Sheet</b><small id="offUnitT">STO-wise</small></span><span class="pc dl"><svg class="ic"><use href="#i-download"/></svg>PDF</span><span class="chev">&#8250;</span></button>
     <button class="lux sm" onclick="openReview('ALL')"><span class="ib"><svg class="ic"><use href="#i-building"/></svg></span><span class="lt"><b>Division Review Sheet</b><small>All Units · Unit-wise</small></span><span class="pc dl"><svg class="ic"><use href="#i-download"/></svg>PDF</span><span class="chev">&#8250;</span></button>
-    <button class="lux sm" onclick="offViewCases()"><span class="ib"><svg class="ic"><use href="#i-list"/></svg></span><span class="lt"><b>View cases</b><small>Case-wise work of the Unit · view only</small></span><span class="chev">&#8250;</span></button>
+    <button class="lux sm" onclick="openCaseLists()"><span class="ib"><svg class="ic"><use href="#i-list"/></svg></span><span class="lt"><b>Case lists</b><small>Recovery · Actions · Ledger · Categories</small></span><span class="chev">&#8250;</span></button>
     <button class="lux sm" onclick="openDash()"><span class="ib"><svg><use href="#gDash"/></svg></span><span class="lt"><b>Dashboard</b><small>Progress reports</small></span><span class="chev">&#8250;</span></button>
     <button class="lux sm hide" id="offAdmin" onclick="offAdmin()"><span class="ib"><svg class="ic"><use href="#i-calendar"/></svg></span><span class="lt"><b>Month control</b><small>Upload monthly list · category lists · exports</small></span><span class="chev">&#8250;</span></button>
   </div>
   <div class="lux-foot slim"><span class="hdiv"><i></i></span><div>Developed by <b>Mehul Ranavasiya</b> &middot; Gandhinagar Division</div></div>
+</div>
+
+<!-- CASE LISTS -->
+<div id="sLists" class="v hide">
+  <div class="sel"><select id="clUnit" onchange="clSet('unit',this.value)"></select><select id="clSto" onchange="clSet('sto',this.value)"></select><select id="clType" onchange="clSet('type',this.value)"><option value="all">All cases</option><option value="A">Active</option><option value="C">Cancelled</option></select></div>
+  <div class="rtabs" id="clTabs">
+    <button data-t="rec" onclick="clSet('tab','rec')"><svg class="ic"><use href="#i-cash"/></svg> Recovery</button><button data-t="act" onclick="clSet('tab','act')"><svg class="ic"><use href="#i-gavel"/></svg> Actions</button>
+    <button data-t="led" onclick="clSet('tab','led')"><svg class="ic"><use href="#i-ledger"/></svg> Ledger</button><button data-t="cat" onclick="clSet('tab','cat')"><svg class="ic"><use href="#i-folder"/></svg> Categories</button>
+  </div>
+  <div class="pills cpills" id="clPills"></div>
+  <div class="srch" id="clSrch"><input id="clQ" type="search" placeholder="Search taxpayer, GSTIN or Demand ID" oninput="CL.q=this.value;CL.lim=50;renderCL()"></div>
+  <div id="clBody" class="clist"></div>
 </div>
 
 <!-- REVIEW SHEET -->
@@ -188,6 +205,12 @@
     <input type="file" id="upFile" accept=".xlsx,.xls,.xlsm" class="hide" onchange="upFileChosen(this)">
     <div class="upf"><button class="btn sec2" style="margin:0" onclick="upPick()"><svg class="ic"><use href="#i-sheet"/></svg> Choose Excel file</button><span id="upName">No file chosen</span></div>
     <div id="upPrev"></div>
+  </div>
+  <div class="sec"><h4><i><svg class="ic"><use href="#i-refresh"/></svg></i>Import entries from old app</h4>
+    <div class="hint" style="font-size:12.5px;line-height:1.55;margin-top:6px">Old app's Google Sheet → File → Download → <b>Microsoft Excel</b>. Choose that file here: only entries made after the last import come in (recoveries, actions, ledger) – no duplicates.</div>
+    <input type="file" id="oiFile" accept=".xlsx,.xls,.xlsm" class="hide" onchange="oiFileChosen(this)">
+    <div class="upf"><button class="btn sec2" style="margin:0" onclick="oiPick()"><svg class="ic"><use href="#i-sheet"/></svg> Choose Excel file</button><span id="oiName">No file chosen</span></div>
+    <div id="oiPrev"></div>
   </div>
   <div id="admLockBox"></div>
   <div class="sec"><h4><i><svg class="ic"><use href="#i-download"/></svg></i>Downloads</h4>
