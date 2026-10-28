@@ -1,7 +1,7 @@
 /* STO Recovery – offline support.
    App files: try the internet first (so updates reach everyone), fall back to the saved copy.
    Data requests to Google (POST) are never cached here. */
-const CACHE = 'sto-recovery-v15';
+const CACHE = 'sto-recovery-v23';
 const FILES = ['./', 'index.html', 'app.js', 'app.css', 'config.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'logo-badge.png', 'logo-badge-sm.png', 'deco-bldg.webp', 'deco-map.webp', 'foot-bldg.webp', 'mo-badge.webp'];
 
 self.addEventListener('install', e => {

@@ -485,3 +485,95 @@ input:focus,select:focus,textarea:focus{border-color:var(--ind);box-shadow:0 0 0
 .clk{margin:0 2px 8px}.clk select{background-color:#fff;border:1px solid #E3D6B2;padding:8px 30px 8px 10px;font-size:13px;font-weight:600;color:var(--ind3)}
 .sel select:disabled{opacity:.55}
 .clr.md1{background:linear-gradient(150deg,#F3D27E,#B8862A)}.clr.md2{background:linear-gradient(150deg,#E2E5EC,#9AA1B2)}.clr.md3{background:linear-gradient(150deg,#E8B58A,#A9683A)}
+.upt tr.td td{color:#0B2470;font-weight:700;background:#EEF1FA}
+
+/* Active / Cancelled switch on STO screens */
+.tyw{padding:10px 14px 0}
+.tyseg{margin-top:0}
+.tyseg button{font-size:13px;padding:8px 2px}
+.tyseg button b{font-weight:700;color:inherit;opacity:.75}
+.tyseg button.on b{opacity:1}
+.tyd{display:inline-block;min-width:17px;padding:0 4px;margin-left:2px;border-radius:9px;background:#C33441;color:#fff;font:700 10.5px/17px Inter,sans-serif;font-style:normal;text-align:center;vertical-align:1px}
+
+/* case identification box & line */
+.cbox{margin:12px 14px 0;background:#fff;border:1.5px solid var(--ind);border-radius:14px;padding:10px 12px 8px}
+.cbh{display:flex;align-items:center;gap:6px;font:700 12px Inter,sans-serif;color:var(--ind);text-transform:uppercase;letter-spacing:.3px;padding-bottom:7px;border-bottom:1px solid #E9E4D6;margin-bottom:6px}
+.cbh .ic{width:15px;height:15px}
+.cbg{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px}
+.cbg>div{font-size:13px;color:#222;min-width:0;overflow-wrap:anywhere}
+.cbg>div.w{grid-column:1/-1}
+.cbg span{display:block;font-size:10.5px;color:#888;text-transform:uppercase;letter-spacing:.2px}
+.cbg .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13.5px;color:var(--ind)}
+.idl{font-size:11px;color:#6B6B80;margin-top:2px;font-weight:400}
+.idl b{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:600;color:var(--ind3)}
+
+/* performance comparison chart */
+.pc h4{display:flex;align-items:center;gap:6px}
+.pc h4 .ic{width:16px;height:16px;color:var(--gold,#C9993F)}
+.pcs{margin-top:9px}.pcs button{font-size:13px;padding:7px 2px;font-weight:600}
+.pcm{font-size:11px;color:#77736A;margin:8px 2px 2px;line-height:1.35}.pcm b{color:var(--ind3)}
+.pcl{display:flex;gap:12px;flex-wrap:wrap;font-size:10.5px;color:#77736A;padding:2px 2px 6px;align-items:center}
+.pcl i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.pcl i.g{background:linear-gradient(#F3D27A,#C9993F)}.pcl i.n{background:linear-gradient(#2A4FB8,#0B2470)}
+.pcl .tip{margin-left:auto;font-style:italic}
+
+/* STO of the Month (Dashboard) */
+.som{margin:10px 14px 0;border-radius:16px;padding:12px 14px;color:#fff;background:linear-gradient(150deg,#17389A,#0B2470 55%,#061848);border:1.5px solid #D9B262;box-shadow:0 8px 20px rgba(11,36,112,.2);position:relative;overflow:hidden}
+.som:after{content:"";position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;background:radial-gradient(rgba(243,210,122,.25),transparent 70%)}
+.somT{display:flex;gap:12px;align-items:center}
+.tro{width:52px;height:52px;flex:none;filter:drop-shadow(0 2px 4px rgba(0,0,0,.3))}
+.somK{display:block;font:700 10.5px Inter,sans-serif;letter-spacing:.6px;text-transform:uppercase;color:#F3D27A}
+.somN{display:block;font-size:18px;margin-top:2px}.somP{display:block;font-size:12px;opacity:.85;margin-top:1px}
+.somS{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.somS div{background:rgba(255,255,255,.08);border:1px solid rgba(243,210,122,.3);border-radius:10px;padding:6px 8px;text-align:center}
+.somS b{display:block;font-size:15px;color:#FFE6A0}.somS span{font-size:10px;opacity:.8}
+.somR{display:flex;flex-direction:column;gap:5px;margin-top:9px;font-size:12px}
+.somR span{display:flex;align-items:center;gap:7px}.somR .md{width:19px;height:19px;font-size:10px;font-style:normal}
+.somF{margin-top:9px;padding-top:8px;border-top:1px dashed rgba(243,210,122,.4);font-size:11.5px;opacity:.9}.somF b{color:#FFE6A0}
+.som.live .tro{opacity:.85}
+/* My standing (STO home) */
+.mys{margin:10px 14px 0;background:#fff;border:1.5px solid #D9B262;border-radius:16px;padding:11px 12px 10px;box-shadow:0 4px 14px rgba(11,36,112,.08);cursor:pointer}
+.msT{display:flex;gap:12px;align-items:center}
+.msR{flex:none;width:74px;height:74px;border-radius:50%;background:linear-gradient(150deg,#17389A,#0B2470);border:2.5px solid #D9B262;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05}
+.msR span{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:#F3D27A}.msR b{font-size:24px}.msR em{font-style:normal;font-size:10px;opacity:.85}
+.msB{flex:1;min-width:0}
+.msK{display:block;font:700 10.5px Inter,sans-serif;letter-spacing:.5px;text-transform:uppercase;color:#A87A22;margin-bottom:3px}
+.msL{display:flex;align-items:baseline;gap:6px;font-size:12px;margin-top:4px}.msL span{color:#555;min-width:68px}.msL b{color:var(--ind3);font-size:15px}.msL em{font-style:normal;color:#888;font-size:11px;margin-left:auto;white-space:nowrap}
+.mys .bar{margin-top:3px}.mys .bar.g i{background:linear-gradient(90deg,#E2B04E,#C9993F)}
+.msG{margin-top:9px;padding:7px 10px;border-radius:10px;background:#FBF5E6;color:#5B4A1E;font-size:12.5px;display:flex;align-items:center;gap:6px}
+.msG b{color:var(--ind3)}.msG .ic{width:16px;height:16px;color:#C9993F}
+.msW{display:flex;align-items:center;gap:8px;margin:-2px 0 8px;padding:6px 10px;border-radius:10px;background:linear-gradient(150deg,#17389A,#0B2470);color:#fff;font-size:12.5px}
+.msW .tro{width:28px;height:28px}.msW b{color:#FFE6A0}
+
+/* ================= Wide-screen (desktop / laptop) mode ================= */
+@media (min-width:1024px){
+  body{background:radial-gradient(1200px 500px at 50% -120px,#E6EAF6,transparent),var(--bg)}
+  .wrapw{max-width:1240px;padding:0 18px 40px}
+  .top{border-radius:0 0 22px 22px}
+  .v{max-width:660px;margin-left:auto;margin-right:auto}
+  #sDash,#sLists,#sOff,#sRev{max-width:none}
+  .savebar{left:50%;right:auto;transform:translateX(-50%);width:660px;border-radius:16px 16px 0 0;box-shadow:0 -6px 18px rgba(11,36,112,.08)}
+  /* Dashboard: two-column board */
+  #sDash .sel,#sDash .rtabs{max-width:900px;margin-left:auto;margin-right:auto}
+  #dBody{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px;margin-top:14px;align-items:start}
+  #dBody>*{grid-column:span 12;margin:0!important;width:auto!important}
+  #dBody>.hl{grid-column:span 5;align-self:stretch}
+  #dBody>.som{grid-column:span 7}
+  #dBody>.kgrid{grid-template-columns:repeat(4,1fr)}
+  #dBody>.chart.pc{grid-column:span 7}
+  #dBody>.chart.pc>svg{display:block;height:300px;width:100%}
+  #dBody>.al{min-height:120px}
+  #dBody>.al{grid-column:span 5}
+  #dBody>.rk{grid-column:span 6}
+  #dBody>.share,#dBody>.lnk{grid-column:span 6}
+  #dBody>.sumcard{grid-column:span 6}
+  .hl b{font-size:30px}.somN{font-size:21px}
+  /* Officer home: tiles in a grid */
+  #sOff .lux-list{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  #sOff .lux-list .lux{margin:0}
+  /* Case lists: two columns of cards */
+  #clBody{display:grid;grid-template-columns:1fr 1fr;column-gap:12px;align-items:start}
+  #clBody>*{grid-column:1/-1}
+  #clBody>.cl{grid-column:auto}
+}
+@media (min-width:1360px){ #dBody>.kgrid{grid-template-columns:repeat(4,1fr)} }

@@ -2,7 +2,7 @@
 var API_URL = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) || '';
 var S = { meta: null, role: '', unit: '', sto: '', pin: '', by: '', d: null, stack: [], screen: '', head: null, cur: null,
           catF: '', ledF: 'todo', listMode: 'rec', listF: 'all', catSel: '', recMode: '', actType: '', fld: {} };
-var R = { data: null, tab: 'ov', unit: 'all', type: 'all', act: 'all', per: 'month', recView: 'unit', showAll: false };
+var R = { pm: 'rec', data: null, tab: 'ov', unit: 'all', type: 'all', act: 'all', per: 'month', recView: 'unit', showAll: false };
 
 /* ---------------- helpers ---------------- */
 function $(id) { return document.getElementById(id); }
@@ -143,7 +143,7 @@ function loginSto() {
 function syncNote(t) { var e = $('syncHome'); e.textContent = t; e.classList.toggle('hide', !t); }
 function openLogin() { show('sLogin', { mode: 'bar', t: 'STO Login', s: (S.meta && S.meta.division) || 'Gandhinagar Division' }); }
 function openRoleLogin() { setRole(ROLE); show('sRole', { mode: 'bar', t: 'Monitoring Officers Login', s: (S.meta && S.meta.division) || 'Gandhinagar Division' }); }
-function logout() { S.role = ''; S.d = null; toStart(); show('sLogin', { mode: 'bar', t: 'STO Login', s: S.meta.division }); }
+function logout() { S.rep = null; S.role = ''; S.d = null; toStart(); show('sLogin', { mode: 'bar', t: 'STO Login', s: S.meta.division }); }
 function goHome() {
   show('sHome', { mode: 'heroSm', t: S.unit + ' · ' + S.sto, s: S.by + ' · ' + S.d.monthLabel }, { reset: [{ id: 'sStart', head: { mode: 'hero', t: 'Recovery – ' + S.meta.division, s: 'Choose how you want to open the app' } }] });
   renderHome();
@@ -152,8 +152,47 @@ function work() { return S.d.cases.filter(function (c) { return c.cat === 'Recov
 function checkedToday(c) { return c.ledgerOn && c.ledgerOn.slice(0, 10) === S.d.today; }
 function caseById(id) { return S.d.cases.find(function (c) { return c.demandId === id; }); }
 function replaceCase(n) { var i = S.d.cases.findIndex(function (c) { return c.demandId === n.demandId; }); if (i >= 0) { n.actsMonth = S.d.cases[i].actsMonth; S.d.cases[i] = n; } cachePut(); return n; }
+/* Active / Cancelled filter (STO screens) – Active by default */
+function tyNow() { if (!S.ty) S.ty = recall('ty') || 'A'; return S.ty; }
+function tyOk(c) { var t = tyNow(); return t === 'all' || (t === 'C') === (c.type === 'Cancelled'); }
+function setTy(t, fn) { S.ty = t; store('ty', t); window[fn](); }
+function tySeg(scr, base, fn, pend) {
+  var t = tyNow(), a = base.filter(function (c) { return c.type !== 'Cancelled'; }), cn = base.length - a.length;
+  function lab(k, n, list) { var p = pend ? list.filter(pend).length : 0; return p ? '<i class="tyd" title="pending">' + p + '</i>' : n; }
+  var can = base.filter(function (c) { return c.type === 'Cancelled'; });
+  $('ty_' + scr).innerHTML = [['A', 'Active', lab('A', a.length, a)], ['C', 'Cancelled', lab('C', cn, can)], ['all', 'All', lab('all', base.length, base)]].map(function (x) {
+    return '<button class="' + (t === x[0] ? 'on' : '') + '" onclick="setTy(\'' + x[0] + '\',\'' + fn + '\')">' + x[1] + ' <b>' + x[2] + '</b></button>'; }).join('');
+}
+/* "My standing" – the STO's position in the Division */
+function loadStanding() {
+  if (S.rep && Date.now() - S.repAt < 300000) { renderStanding(); return; }
+  if (!S.rep) { try { var c = JSON.parse(recall('report') || 'null'); if (c && c.rows) { S.rep = c; S.repAt = 0; renderStanding(); } } catch (e) {} }
+  api('getReport', '').then(function (r) { S.rep = r; S.repAt = Date.now(); store('report', JSON.stringify(r)); if (S.screen === 'sHome') renderStanding(); }).catch(function () {});
+}
+function renderStanding() {
+  var el = $('myStand'), r = S.rep; if (!r || !r.rows) { el.classList.add('hide'); return; }
+  var L = stoRank(r), i = -1;
+  L.forEach(function (x, k) { if (x.unit === S.unit && x.sto === S.sto) i = k; });
+  if (i < 0) { el.classList.add('hide'); return; }
+  var me = L[i], n = L.length, rk = 1 + L.filter(function (x) { return x.pct > me.pct + 1e-9; }).length, U = L.filter(function (x) { return x.unit === S.unit; }), ur = 1 + U.filter(function (x) { return x.pct > me.pct + 1e-9; }).length;
+  var uRec = U.reduce(function (a, x) { return a + x.recovered; }, 0), uTg = U.reduce(function (a, x) { return a + x.target; }, 0), uAvg = uTg ? uRec * 100 / uTg : 0;
+  var need = function (pct) { return Math.max(0, Math.ceil(pct / 100 * me.target - me.recovered) + 1); }, gap;
+  if (rk === 1) gap = me.recovered > 0 ? ic('trophy') + ' <b>You are leading the Division</b> – keep it up!' : 'Record your first recovery to get on the board';
+  else if (rk > 5 && !(L[4].pct > me.pct)) gap = 'Record a recovery to move up the board';
+  else if (rk > 5) gap = 'Only <b>&#8377;' + short(need(L[4].pct)) + '</b> more to reach the <b>Top 5</b>';
+  else { var ab = L[rk - 2]; gap = '<b>&#8377;' + short(need(ab.pct)) + '</b> more to overtake <b>#' + (rk - 1) + '</b> (' + esc(ab.sto) + ' · ' + esc(shortU(ab.unit)) + ')'; }
+  var won = r.som && r.som.top && r.som.top[0] && r.som.top[0].unit === S.unit && r.som.top[0].sto === S.sto;
+  el.classList.remove('hide');
+  el.innerHTML = (won ? '<div class="msW">' + TROPHY + '<span>You were <b>STO of the Month</b> for ' + esc(r.som.monthLabel) + '</span></div>' : '') +
+    '<div class="msT"><div class="msR"><span>Rank</span><b>' + rk + '</b><em>of ' + n + '</em></div><div class="msB">' +
+    '<span class="msK">My standing · ' + esc(r.monthLabel) + '</span>' +
+    '<div class="msL"><span>You</span><b>' + me.pct.toFixed(1) + '%</b><em>of target · &#8377;' + short(me.recovered) + '</em></div><div class="bar g"><i style="width:' + Math.min(100, me.pct).toFixed(1) + '%"></i></div>' +
+    '<div class="msL"><span>' + esc(shortU(S.unit)) + ' average</span><b>' + uAvg.toFixed(1) + '%</b><em>Rank ' + ur + ' of ' + U.length + ' in Unit</em></div><div class="bar"><i style="width:' + Math.min(100, uAvg).toFixed(1) + '%"></i></div>' +
+    '</div></div><div class="msG">' + gap + '</div>';
+}
 function renderHome() {
   $('whoName').textContent = S.by + ' · ' + S.unit + ' · ' + S.sto;
+  loadStanding();
   var cs = S.d.cases, w = work(), dec = 0, con = 0;
   cs.forEach(function (c) { if (c.catStatus === 'decide') dec++; else if (c.catStatus === 'confirm') con++; });
   if (!S.d.locked && dec + con > 0) {
@@ -179,18 +218,20 @@ function openCat() {
   renderCat();
 }
 function renderCat() {
-  var cs = S.d.cases, L = S.d.locked, n = { decide: 0, confirm: 0, done: 0 };
-  cs.forEach(function (c) { n[c.catStatus]++; });
+  var all = S.d.cases, L = S.d.locked, n = { decide: 0, confirm: 0, done: 0 };
+  tySeg('sCat', all, 'renderCat', L ? null : function (c) { return c.catStatus !== 'done'; });
+  var cs = all.filter(tyOk); all.forEach(function (c) { n[c.catStatus]++; });
   if (!L && n.decide + n.confirm > 0) {
     $('catBan').className = 'ban';
-    $('catBan').innerHTML = '<b>' + S.d.monthLabel + ': ' + n.decide + ' new cases to decide · ' + n.confirm + ' to confirm</b>Last month\'s category is pre-filled. Tap Confirm, or Change if the status has changed.';
+    $('catBan').innerHTML = '<b>' + S.d.monthLabel + ': ' + n.confirm + ' to confirm' + (n.decide ? ' · ' + n.decide + ' new to decide' : '') + '</b>' + (n.decide ? 'NEW cases: tap <strong>Decide</strong> and select the category. ' : '') + 'For the others the category proposed by the Division office is shown: tap <strong>Confirm</strong> if correct, or <strong>Change</strong> and write the reason.';
   } else {
-    var cnt = {}; cs.forEach(function (c) { cnt[c.cat] = (cnt[c.cat] || 0) + 1; });
+    var cnt = {}; all.forEach(function (c) { cnt[c.cat] = (cnt[c.cat] || 0) + 1; });
     $('catBan').className = 'ban ok';
-    $('catBan').innerHTML = '<b>&#10003; All ' + cs.length + ' cases have a category for ' + S.d.monthLabel + '</b>' +
+    $('catBan').innerHTML = '<b>&#10003; All ' + all.length + ' cases have a category for ' + S.d.monthLabel + '</b>' +
       Object.keys(cnt).map(function (k) { return esc(CAT_SHORT[k] || k) + ': ' + cnt[k]; }).join(' · ') + '. Work on Recoverable cases in Ledger, Recovery and Actions.';
   }
-  var pills = L ? [['all', 'All ' + cs.length]] : [['decide', '🆕 To decide ' + n.decide], ['confirm', 'To confirm ' + n.confirm], ['done', 'Done ' + n.done], ['all', 'All']];
+  n = { decide: 0, confirm: 0, done: 0 }; cs.forEach(function (c) { n[c.catStatus]++; });
+  var pills = L ? [['all', 'All ' + cs.length]] : (n.decide ? [['decide', 'New, to decide ' + n.decide]] : []).concat([['confirm', 'To confirm ' + n.confirm], ['done', 'Done ' + n.done], ['all', 'All']]);
   if (!pills.some(function (p) { return p[0] === S.catF; })) S.catF = 'all';
   $('catPills').innerHTML = pills.map(function (p) { return '<button class="pill' + (S.catF === p[0] ? ' on' : '') + '" onclick="S.catF=\'' + p[0] + '\';renderCat()">' + p[1] + '</button>'; }).join('');
   var q = $('qCat').value.trim().toLowerCase();
@@ -206,15 +247,15 @@ function renderCat() {
       else if (c.catStatus === 'confirm') btns = '<button class="mb" onclick="openCatForm(\'' + esc(c.demandId) + '\')">Change</button><button class="mb f" onclick="confirmOne(\'' + esc(c.demandId) + '\')">Confirm</button>';
       else btns = '<button class="mb" onclick="openCatForm(\'' + esc(c.demandId) + '\')">Change</button>';
     }
-    var sub = esc(c.gstin) + ' · ' + esc(c.type) + (c.catDetails ? ' · ' + esc(c.catDetails) : '');
+    var sub = esc(c.gstin) + ' · ' + esc(c.type) + (c.catDetails ? ' · ' + esc(c.catDetails) : '') + (c.catReason ? '<br><i>Reason: ' + esc(c.catReason) + '</i>' : '');
     return '<div class="cs' + (c.catStatus === 'decide' ? ' r' : c.catStatus === 'confirm' ? ' a' : ' g') + '" style="cursor:default"><div class="n">' + esc(c.name) + (c.catStatus === 'decide' ? ' <span class="tg new">NEW</span>' : '') + '</div>' +
-      '<div class="gs">' + sub + '</div><div class="amt">&#8377;' + short(c.pending) + '</div>' +
-      '<div class="meta">' + catChip(c.catStatus === 'decide' ? '' : c.cat) + (c.catStatus === 'confirm' ? '<span class="from">from last month</span>' : '') +
+      '<div class="gs">' + sub + '</div>' + idLine(c) + '<div class="amt">&#8377;' + short(c.pending) + '</div>' +
+      '<div class="meta">' + catChip(c.catStatus === 'decide' ? '' : c.cat) + (c.catStatus === 'confirm' ? '<span class="from">proposed</span>' : '') + (c.catStatus === 'done' && c.catPrev && c.catPrev !== c.cat ? '<span class="from">changed from ' + esc(CAT_SHORT[c.catPrev] || c.catPrev) + '</span>' : c.catStatus === 'done' && !L ? '<span class="from">confirmed</span>' : '') +
       '<span class="acts">' + btns + '</span></div></div>';
   }).join('') : '<div class="empty">No cases in this view</div>';
   var nc = cs.filter(function (c) { return c.catStatus === 'confirm'; }).length;
   $('catBar').classList.toggle('hide', L || !nc);
-  $('confirmAllBtn').innerHTML = '&#10003; Confirm all ' + nc + ' unchanged';
+  $('confirmAllBtn').innerHTML = '&#10003; Confirm all ' + nc + ' unchanged' + (tyNow() === 'all' ? '' : tyNow() === 'A' ? ' (Active)' : ' (Cancelled)');
   $('catRows').style.paddingBottom = (!L && nc) ? '90px' : '20px';
 }
 function confirmIds(ids, msg) {
@@ -227,10 +268,10 @@ function confirmIds(ids, msg) {
 }
 function confirmOne(id) { confirmIds([id], 'Confirmed ✓'); }
 function confirmAll() {
-  var ids = S.d.cases.filter(function (c) { return c.catStatus === 'confirm'; }).map(function (c) { return c.demandId; });
+  var ids = S.d.cases.filter(function (c) { return c.catStatus === 'confirm' && tyOk(c); }).map(function (c) { return c.demandId; });
   if (!ids.length) return;
-  if (!confirm('Confirm last month\'s category for all ' + ids.length + ' cases that have not changed?')) return;
-  confirmIds(ids);
+  if (!confirm('Confirm the proposed category for all ' + ids.length + ' remaining cases?')) return;
+  S.catF = 'done'; confirmIds(ids);
 }
 var CAT_DESC = {
   'NCLT / Liquidation': 'NCLT case no., admission date',
@@ -249,9 +290,11 @@ function parseDet(s) { var o = {}; String(s || '').split(';').forEach(function (
 function openCatForm(id) {
   var c = caseById(id); if (!c) return; S.cur = c; S.catSel = c.catStatus === 'decide' ? '' : c.cat; S.fld = parseDet(c.catDetails);
   show('sCatForm', { mode: 'bar', t: c.name, s: c.gstin + ' · ₹' + inr(c.pending) });
-  $('catErr').textContent = '';
-  $('catCur').classList.toggle('hide', c.catStatus !== 'confirm');
-  $('catCur').innerHTML = '<div class="hint">Last month: <b>' + esc(c.cat) + '</b>' + (c.catDetails ? ' · ' + esc(c.catDetails) : '') + '</div>';
+  $('catErr').textContent = ''; $('catBox').innerHTML = caseBox(c);
+  S.catProp = c.catPrev || (c.catStatus === 'confirm' ? c.cat : '');
+  $('catCur').classList.toggle('hide', !S.catProp);
+  $('catCur').innerHTML = '<div class="hint" style="font-size:12.5px">Proposed by the Division office: <b>' + esc(S.catProp) + '</b>' + (c.catStatus === 'confirm' && c.catDetails ? ' · ' + esc(c.catDetails) : '') + '</div>';
+  $('catReason').value = c.catReason || '';
   renderCatForm();
 }
 function renderCatForm() {
@@ -259,7 +302,10 @@ function renderCatForm() {
     return '<button class="op' + (S.catSel === k ? ' on' : '') + '" onclick="pickCat(\'' + esc(k) + '\')"><span class="rd"></span><div>' +
       (k === 'Recoverable' ? '<b style="color:#17663A">Recoverable</b>' : esc(k)) + '<small>' + esc(CAT_DESC[k] || '') + '</small></div></button>';
   }).join('');
-  var f = CAT_FIELDS[S.catSel];
+  var f = CAT_FIELDS[S.catSel], chg = !!S.catProp && !!S.catSel && S.catSel !== S.catProp;
+  $('catRsn').classList.toggle('hide', !chg);
+  if (chg) $('catRsnT').textContent = 'Reason for change (from ' + (CAT_SHORT[S.catProp] || S.catProp) + ' to ' + (CAT_SHORT[S.catSel] || S.catSel) + ')';
+  $('catSave').textContent = chg ? 'Save change' : S.catProp ? 'Confirm category' : 'Save category';
   $('catDet').classList.toggle('hide', !f);
   if (!f) return;
   $('catDetT').textContent = 'Details for ' + (CAT_SHORT[S.catSel] || S.catSel);
@@ -289,8 +335,10 @@ function saveCat() {
     if (f[i][1] === 'num' && v && !isNum(v.replace(/,/g, ''))) { e.textContent = f[i][0] + ' must be a number.'; return; }
     if (v) parts.push(f[i][0] + ': ' + v);
   }
+  var reason = $('catReason').value.trim(), chg = !!S.catProp && S.catSel !== S.catProp;
+  if (chg && reason.length < 5) { e.textContent = 'Please write the reason for changing the category.'; $('catReason').focus(); return; }
   busy(true);
-  api('saveCategory', { unit: S.unit, sto: S.sto, pin: S.pin, by: S.by, demandId: S.cur.demandId, category: S.catSel, details: parts.join('; ') })
+  api('saveCategory', { unit: S.unit, sto: S.sto, pin: S.pin, by: S.by, demandId: S.cur.demandId, category: S.catSel, details: parts.join('; '), reason: chg ? reason : '' })
     .then(function (n) { busy(false); replaceCase(n); toast('Category saved ✓'); goBack(); })
     .catch(function (err) { busy(false); e.textContent = err; });
 }
@@ -319,7 +367,8 @@ function ledAge(c) {
 }
 function openLedger() { show('sLedger', { mode: 'bar', t: 'Ledger Balance', s: 'Daily check · ' + dmy(S.d.today) }); renderLedger(); }
 function renderLedger() {
-  var w = work(), done = w.filter(checkedToday).length, adj = w.filter(function (c) { return c.ledgerGroup === 'A'; }).length;
+  tySeg('sLedger', work(), 'renderLedger', function (c) { return !checkedToday(c); });
+  var w = work().filter(tyOk), done = w.filter(checkedToday).length, adj = w.filter(function (c) { return c.ledgerGroup === 'A'; }).length;
   $('ledPrg').textContent = done + ' of ' + w.length + ' checked today';
   $('ledBar').style.width = (w.length ? Math.round(done * 100 / w.length) : 0) + '%';
   var pills = [['todo', 'To check ' + (w.length - done)], ['done', 'Checked today ' + done], ['adj', 'Adjustable ' + adj], ['all', 'All ' + w.length]];
@@ -339,7 +388,7 @@ function ledRow(c) {
   var btn = checkedToday(c) ? '<button class="mb g" id="lb_' + id + '" onclick="ledSave(\'' + id + '\')">&#10003; Checked</button>'
     : (c.ledgerOn ? '<button class="mb" id="lb_' + id + '" onclick="ledSave(\'' + id + '\')">Same as<br>before</button>' : '<button class="mb f" id="lb_' + id + '" onclick="ledSave(\'' + id + '\')">Save</button>');
   var head = (Number(cash) || 0) > 0 ? '' : ' hide';
-  return '<div class="lr" id="lr_' + id + '"><div class="t"><span class="nm" onclick="openCase(\'' + id + '\')">' + esc(c.name) + ' &#8250;</span><small>Bal &#8377;' + short(c.balance) + '<br>' + ledAge(c) + '</small></div>' +
+  return '<div class="lr" id="lr_' + id + '"><div class="t"><span class="nm" onclick="openCase(\'' + id + '\')">' + esc(c.name) + ' &#8250;' + idLine(c) + '</span><small>Bal &#8377;' + short(c.balance) + '<br>' + ledAge(c) + '</small></div>' +
     '<div class="f"><div><label>Cash (&#8377;)</label><input id="lc_' + id + '" inputmode="numeric" value="' + cash + '" placeholder="0" oninput="ledEdit(\'' + id + '\')"></div>' +
     '<div><label>Credit (&#8377;)</label><input id="ld_' + id + '" inputmode="numeric" value="' + cr + '" placeholder="0" oninput="ledEdit(\'' + id + '\')"></div>' + btn + '</div>' +
     '<div class="hd' + head + '" id="lh_' + id + '">Cash under the same head as demand? <button class="' + (c.cashHead !== 'No' ? 'on' : '') + '" onclick="ledHead(\'' + id + '\',\'Yes\')">Yes</button><button class="' + (c.cashHead === 'No' ? 'on' : '') + '" onclick="ledHead(\'' + id + '\',\'No\')">No – PMT-09</button></div>' +
@@ -369,7 +418,8 @@ function openList(mode) {
   renderList();
 }
 function renderList() {
-  var mode = S.listMode, all = mode === 'unit' ? S.d.cases : work(), pills;
+  var mode = S.listMode, base = mode === 'unit' ? S.d.cases : work(), pills;
+  tySeg('sList', base, 'renderList', null); var all = base.filter(tyOk);
   if (mode === 'rec') pills = [['all', 'All ' + all.length], ['done', 'Recovered this month ' + all.filter(function (c) { return c.recovered > 0; }).length], ['none', 'No recovery yet']];
   else if (mode === 'act') pills = [['all', 'All ' + all.length], ['none', 'No action this month ' + all.filter(function (c) { return !c.actsMonth; }).length], ['done', 'With actions']];
   else {
@@ -394,12 +444,37 @@ function renderList() {
       var last = c.stepDate || c.spotDate ? ((c.stepDate >= c.spotDate ? stepShort(c.step) + ' · ' + dmy(c.stepDate).slice(0, 5) : 'Spot visit · ' + dmy(c.spotDate).slice(0, 5))) : '';
       meta = '<span>' + ic('gavel') + ' ' + (c.actsMonth ? c.actsMonth + ' action' + (c.actsMonth > 1 ? 's' : '') + ' this month' : 'No action this month') + (last ? ' · last: ' + esc(last) : '') + '</span>'; fn = 'openAct';
     } else { cls = c.cat === 'Recoverable' ? (c.updatedOn && daysAgo(c.updatedOn) < S.meta.freshDays ? 'g' : 'r') : ''; meta = catChip(c.cat || '') + (c.cat === 'Recoverable' ? ledChip(c) : '') + (c.recovered > 0 ? '<span>' + ic('cash') + ' &#8377;' + short(c.recovered) + '</span>' : ''); fn = 'openCase'; }
-    return '<div class="cs ' + cls + '" onclick="' + fn + '(\'' + id + '\')"><div class="n">' + esc(c.name) + '</div><div class="gs">' + esc(c.gstin) + (mode === 'unit' ? ' · ' + esc(c.sto) : '') + ' · ' + esc(c.type) + '</div>' +
+    return '<div class="cs ' + cls + '" onclick="' + fn + '(\'' + id + '\')"><div class="n">' + esc(c.name) + '</div><div class="gs">' + esc(c.gstin) + (mode === 'unit' ? ' · ' + esc(c.sto) : '') + ' · ' + esc(c.type) + '</div>' + idLine(c) +
       '<div class="amt">&#8377;' + short(c.balance) + '</div><div class="meta">' + meta + '</div></div>';
   }).join('') : '<div class="empty">No cases in this view</div>';
 }
 
 /* ---------------- recovery form ---------------- */
+/* ---- case identification: Demand ID, order date, tax period, F.Y., section ---- */
+function fyOfDate(d, m, y) { y = Number(y); m = Number(m); return m >= 4 ? y + '-' + String(y + 1).slice(-2) : (y - 1) + '-' + String(y).slice(-2); }
+function fyOf(c) {
+  var t = String(c.taxPeriod || ''), d = t.match(/(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/g);
+  if (d && d.length) {
+    var p = function (x) { var q = x.split(/[-\/.]/); return fyOfDate(q[0], q[1], q[2]); }, a = p(d[0]), b = p(d[d.length - 1]);
+    return a === b ? a : a + ' to ' + b;
+  }
+  var f = t.match(/(\d{4})\s*-\s*(\d{2,4})/); if (f) return f[1] + '-' + f[2].slice(-2);
+  return '';
+}
+function idLine(c) {
+  var fy = fyOf(c);
+  return '<div class="idl"><b>' + esc(c.demandId) + '</b>' + (c.demandDate ? ' · ' + dmy(c.demandDate) : '') + (fy ? ' · F.Y. ' + esc(fy) : '') + '</div>';
+}
+function caseBox(c) {
+  var fy = fyOf(c), rows = [
+    ['Demand ID', '<b class="mono">' + esc(c.demandId) + '</b>'], ['Order date', c.demandDate ? dmy(c.demandDate) : '–'],
+    ['Tax period', esc(c.taxPeriod || '–')], ['Year (F.Y.)', esc(fy || '–')],
+    ['Section', esc(c.section || '–')], ['Case type', esc(c.type || '–')],
+    ['Original demand', '&#8377;' + inr(c.original)], ['Pending demand', '&#8377;' + inr(c.pending)]];
+  if (c.tradeName && c.tradeName.toUpperCase() !== String(c.name).toUpperCase()) rows.unshift(['Trade name', esc(c.tradeName)]);
+  return '<div class="cbh">' + ic('doc') + ' Check that this is the correct case</div><div class="cbg">' +
+    rows.map(function (r) { return '<div' + (r[0] === 'Trade name' ? ' class="w"' : '') + '><span>' + r[0] + '</span>' + r[1] + '</div>'; }).join('') + '</div>';
+}
 function caseKpis(c) {
   return '<div class="kpi"><span>Balance pending</span><b>&#8377;' + inr(c.balance) + '</b></div>' +
     '<div class="kpi">' + (c.mobile ? '<a href="tel:' + esc(c.mobile) + '"><span>Call taxpayer</span><b>' + ic('phone') + ' ' + esc(c.mobile) + '</b></a>' : '<span>Mobile</span><b>–</b>') + '</div>';
@@ -408,6 +483,7 @@ function openRec(id) {
   var c = caseById(id); if (!c) return; S.cur = c; S.recMode = '';
   show('sRec', { mode: 'bar', t: c.name, s: c.gstin, k: '<div class="kpi"><span>Balance pending</span><b>&#8377;' + inr(c.balance) + '</b></div><div class="kpi"><span>Recovered this month</span><b>&#8377;' + inr(c.recovered) + '</b></div>' });
   ['rAmt', 'rRef', 'rRem'].forEach(function (k) { $(k).value = ''; }); $('rDate').value = todayIso(); $('rDate').max = todayIso(); $('rErr').textContent = '';
+  $('recBox').innerHTML = caseBox(c);
   renderModes(); recPreview();
   $('rHist').innerHTML = '<h4><i>' + ic('clock') + '</i>Recoveries recorded</h4><div class="hint">Loading…</div>';
   api('getHistory', S.unit, S.sto, S.pin, id, 'sto').then(function (h) {
@@ -450,6 +526,7 @@ function openAct(id) {
   var c = caseById(id); if (!c) return; S.cur = c; S.actType = '';
   show('sAct', { mode: 'bar', t: c.name, s: c.gstin + ' · ' + c.type, k: caseKpis(c) });
   ['aRef', 'aRem'].forEach(function (k) { $(k).value = ''; }); $('aDate').value = todayIso(); $('aDate').max = todayIso(); $('aErr').textContent = '';
+  $('actBox').innerHTML = caseBox(c);
   renderActTypes(); loadActHist(id);
 }
 function actTypes() { return ['Spot visit'].concat(S.cur.type === 'Cancelled' ? S.meta.stepsCancelled : S.meta.stepsActive); }
@@ -500,7 +577,9 @@ function openCase(id, again) {
     card('', ic('cash'), 'Recovery · this month', '&#8377;' + inr(c.recovered) + ' recovered', c.recMode ? '<br><span>' + esc(c.recMode) + ' · ' + dmy(c.recDate) + '</span>' : '', ro ? '' : '<button class="mb" onclick="openRec(\'' + esc(c.demandId) + '\')">+ Add</button>') +
     card('', ic('gavel'), 'Actions · ' + (c.actsMonth || 0) + ' this month', esc(last), '', ro ? '' : '<button class="mb" onclick="openAct(\'' + esc(c.demandId) + '\')">+ Add</button>');
   renderHubLedger(); renderHubBrk();
-  $('hubInfo').innerHTML = [['Demand ID', esc(c.demandId)], ['Recovery ID', esc(c.recoveryId)], ['Demand order date', dmy(c.demandDate)], ['Demand status', esc(c.demandStatus)],
+  $('hubInfo').innerHTML = [['Demand ID', esc(c.demandId)], ['Recovery ID', esc(c.recoveryId)], ['Demand order date', dmy(c.demandDate)],
+    ['Tax period', esc(c.taxPeriod || '–')], ['Year (F.Y.)', esc(fyOf(c) || '–')], ['Section', esc(c.section || '–')], ['Source of demand', esc(c.source || '–')],
+    ['Trade name', esc(c.tradeName || '–')], ['Case type', esc(c.type)], ['Demand status', esc(c.demandStatus)],
     ['Original demand', '&#8377;' + inr(c.original)], ['Pending demand (DCR)', '&#8377;' + inr(c.pending)], ['Recovered this month', '&#8377;' + inr(c.recovered)], ['STO', esc(c.unit) + ' · ' + esc(c.sto)],
     ['Last updated', c.updatedOn ? dmy(c.updatedOn) + ' ' + c.updatedOn.slice(11) + ' · ' + esc(c.updatedBy) : '–']]
     .map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('');
@@ -606,7 +685,7 @@ function renderAdmin(info) {
     '<br>Cases: <b>' + info.cases + '</b>' + (info.noSto ? '<br><b style="color:#C33441">' + ic('alert') + ' ' + info.noSto + (info.noSto > 1 ? ' cases have' : ' case has') + ' no STO</b> – fill the STO column of the Cases sheet (e.g. STO-1). They are not shown to any STO until then.' : '') + '<br>Category decisions: <b>' + info.done + ' of ' + info.cases + '</b> done' + (info.locked ? '' : ' · ' + info.decide + ' new to decide · ' + info.confirm + ' to confirm') + '</div>';
   $('admLockBox').innerHTML = info.locked ? '<div class="ban ok"><b>' + ic('lock') + ' Categories locked for ' + esc(info.monthLabel) + '</b>Locked on ' + esc(info.lockedOn) + '. STOs now see categories as final.</div>' :
     '<div style="margin:10px 14px 0"><button class="btn" style="margin:0" onclick="lockNow()">' + ic('lock') + ' Lock categories for ' + esc(info.monthLabel) +
-    '<br><small style="font-weight:400;font-size:11px;opacity:.85">' + (info.decide + info.confirm ? (info.decide + info.confirm) + ' decisions still pending · undecided cases become Recoverable' : 'All decisions done') + '</small></button></div>';
+    '<br><small style="font-weight:400;font-size:11px;opacity:.85">' + (info.decide + info.confirm ? (info.decide + info.confirm) + ' decisions still pending with STOs · they keep the proposed category' : 'All STOs have decided') + (info.changed ? ' · ' + info.changed + ' changed by STOs' : '') + '</small></button></div>';
 }
 function lockNow() {
   if (!confirm('Lock categories now? Undecided cases will be treated as Recoverable and STOs cannot change categories this month.')) return;
@@ -635,7 +714,7 @@ function openDash() {
   show('sDash', { mode: 'bar', ic: 1, t: 'Dashboard', s: (S.meta ? S.meta.division : '') + ' · public view' });
   var rep = null; try { rep = JSON.parse(recall('report') || 'null'); } catch (e) {}
   if (rep && (!R.data || R.data.month === rep.month)) { R.data = rep; renderReport(); }
-  loadReport(R.data ? R.data.month : '');
+  loadReport(R.data && !R.data.isCurrent ? R.data.month : '');   // current month view always follows the latest month
 }
 function loadReport(month) {
   if (!R.data) busy(true); else { $('dSync').textContent = 'Refreshing…'; $('dSync').classList.remove('hide'); }
@@ -674,6 +753,7 @@ function renderOverview() {
   var d = R.data, G = totals(d.rows), tgt = G.pending * d.targetPct / 100, p = tgt ? G.recovered / tgt : 0, html = '';
   var scope = (R.unit === 'all' ? 'Division' : R.unit) + (R.type === 'all' ? '' : R.type === 'A' ? ' · Active' : ' · Cancelled');
   html += '<div class="hl">' + ringSvg(p, 58) + '<div><span>Recovered in ' + esc(d.monthLabel) + ' · ' + esc(scope) + '</span><b>&#8377;' + short(G.recovered) + '</b><span>of &#8377;' + short(tgt) + ' target · ' + (p * 100).toFixed(1) + '%</span></div></div>';
+  html += somCard();
   html += '<div class="kgrid">';
   if (d.isCurrent) {
     html += '<div class="kb"><span>Cases updated (last ' + d.freshDays + ' days)</span><b>' + G.updated + ' / ' + G.cases + '</b></div>' +
@@ -684,7 +764,7 @@ function renderOverview() {
     var pend = 0; rowsF(d.rows).forEach(function (r) { pend += r.decide + r.confirm; });
     html += '<div class="kb"><span>Category decisions pending</span><b style="color:' + (pend ? '#C33441' : '#17663A') + '">' + pend + '</b></div>';
   } else html += '<div class="kb"><span>Adjustable in ledgers</span><b>&#8377;' + short(G.adjustable) + '</b></div>';
-  html += '</div>' + trendChart(tgt);
+  html += '</div>' + perfChart();
   if (d.isCurrent) {
     var noUp = rowsF(d.rows).filter(function (r) { var f = pick(r); return f.cases > 0 && f.updated === 0; });
     var od = rowsF(d.rows).map(function (r) { var f = pick(r); return { r: r, n: f.overdue, a: f.overdueAmt }; }).filter(function (x) { return x.n > 0; }).sort(function (a, b) { return b.a - a.a; });
@@ -709,6 +789,76 @@ function renderOverview() {
   }
   html += '<button class="share" onclick="shareSummary()">' + ic('share') + ' Share summary (WhatsApp)</button><button class="lnk" onclick="window.print()">' + ic('print') + ' Print / Save as PDF</button>';
   return html;
+}
+/* ---------- STO ranking (division, Active + Cancelled, Recoverable cases) ---------- */
+function stoRank(rep) {
+  var tp = Number(rep.targetPct) || 0;
+  return rep.rows.map(function (r) {
+    var pend = r.A.pending + r.C.pending, rec = r.A.recovered + r.C.recovered, tg = pend * tp / 100;
+    return { unit: r.unit, sto: r.sto, cases: r.A.cases + r.C.cases, pending: pend, recovered: rec, target: tg, actions: r.A.actions + r.C.actions,
+      pct: tg ? rec * 100 / tg : 0, name: (rep.names || {})[r.unit + '|' + r.sto] || '' };
+  }).filter(function (x) { return x.cases > 0; }).sort(function (a, b) { return b.pct - a.pct || b.recovered - a.recovered; });
+}
+var TROPHY = '<svg viewBox="0 0 64 64" class="tro"><defs><linearGradient id="tG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFE6A0"/><stop offset=".55" stop-color="#E2B04E"/><stop offset="1" stop-color="#A8771E"/></linearGradient></defs>' +
+  '<path d="M20 10h24v14a12 12 0 0 1-24 0z" fill="url(#tG)"/><path d="M20 14h-8v4a9 9 0 0 0 9 9M44 14h8v4a9 9 0 0 1-9 9" fill="none" stroke="url(#tG)" stroke-width="3.4" stroke-linecap="round"/>' +
+  '<path d="M28 35h8v8h-8z" fill="url(#tG)"/><rect x="21" y="43" width="22" height="7" rx="2" fill="url(#tG)"/><rect x="17" y="50" width="30" height="5" rx="2" fill="url(#tG)"/>' +
+  '<path d="M32 15.5l2.1 4.3 4.7.7-3.4 3.3.8 4.7-4.2-2.2-4.2 2.2.8-4.7-3.4-3.3 4.7-.7z" fill="#0B2470" opacity=".75"/></svg>';
+function somCard() {
+  var d = R.data, top, label, live = false;
+  if (!d.isCurrent) { top = stoRank(d).filter(function (x) { return x.recovered > 0; }).slice(0, 3); label = d.monthLabel; }
+  else if (d.som && d.som.top && d.som.top.length) { top = d.som.top; label = d.som.monthLabel; }
+  var lead = d.isCurrent ? stoRank(d).filter(function (x) { return x.recovered > 0; })[0] : null;
+  if (!top || !top.length) {
+    if (!lead) return '';
+    top = [lead]; label = d.monthLabel; live = true;
+  }
+  var w = top[0], who = function (x) { return esc(x.sto) + ' · ' + esc(x.unit); };
+  var h = '<div class="som' + (live ? ' live' : '') + '"><div class="somT">' + TROPHY + '<div><span class="somK">' + (live ? 'Race for STO of the Month · ' : 'STO of the Month · ') + esc(label) + '</span>' +
+    '<b class="somN">' + who(w) + '</b>' + (w.name ? '<span class="somP">' + esc(w.name) + '</span>' : '') + '</div></div>' +
+    '<div class="somS"><div><b>&#8377;' + short(w.recovered) + '</b><span>recovered</span></div><div><b>' + w.pct.toFixed(1) + '%</b><span>of target</span></div><div><b>' + (w.actions || 0) + '</b><span>actions</span></div></div>';
+  if (live) h += '<div class="somF">Leading so far · the STO of the Month is announced when ' + esc(label) + ' closes</div>';
+  else {
+    if (top.length > 1) h += '<div class="somR">' + top.slice(1).map(function (x, i) { return '<span><i class="md md' + (i + 2) + '">' + (i + 2) + '</i>' + who(x) + ' · ' + x.pct.toFixed(1) + '%</span>'; }).join('') + '</div>';
+    if (lead && d.isCurrent) h += '<div class="somF">' + esc(d.monthLabel) + ' race · leading now: <b>' + who(lead) + '</b> (' + lead.pct.toFixed(1) + '%)</div>';
+  }
+  return h + '</div>';
+}
+/* Performance comparison: Units (or STOs of the selected Unit) – Recovery / Ledgers / Actions */
+function perfChart() {
+  var d = R.data, byUnit = R.unit === 'all', pm = R.pm || 'rec';
+  var items = byUnit
+    ? unitsOf(d.rows).map(function (u) { var g = totals(d.rows, u); g.lab = shortU(u); g.full = u; return g; })
+    : rowsF(d.rows).map(function (r) { var g = pick(r); g.lab = r.sto.replace('STO-', 'STO '); g.full = r.unit + ' · ' + r.sto; return g; });
+  items = items.filter(function (g) { return g.cases > 0; });
+  items.forEach(function (g) {
+    var chk = d.isCurrent ? g.cases - g.notChecked : g.cases - g.gU, tg = g.pending * d.targetPct / 100;
+    if (pm === 'rec') { g.v = g.recovered; g.top = '&#8377;' + short(g.recovered); g.sub = (tg ? (g.recovered * 100 / tg).toFixed(1) : '0.0') + '% of target'; }
+    else if (pm === 'led') { g.v = g.cases ? chk / g.cases : 0; g.top = Math.round(g.v * 100) + '%'; g.sub = chk + ' / ' + g.cases + ' cases'; }
+    else { g.v = g.actions; g.top = String(g.actions); g.sub = (g.cases ? (g.actions / g.cases).toFixed(1) : '0') + ' per case'; }
+  });
+  items.sort(function (a, b) { return b.v - a.v; });
+  var n = Math.max(items.length, 1), W = 340, H = 214, L = 8, T = 26, B = 46, cw = (W - L * 2) / n, bw = Math.min(38, cw * 0.56);
+  var max = Math.max.apply(null, items.map(function (g) { return g.v; }).concat([pm === 'led' ? 1 : 0, 1e-9]));
+  var y = function (v) { return T + (H - T - B) * (1 - v / max); }, base = H - B;
+  var svg = '<defs><linearGradient id="pbN" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2A4FB8"/><stop offset="1" stop-color="#0B2470"/></linearGradient>' +
+    '<linearGradient id="pbG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F3D27A"/><stop offset="1" stop-color="#C9993F"/></linearGradient></defs>';
+  for (var k = 1; k <= 3; k++) { var gy = (T + (base - T) * k / 4).toFixed(1); svg += '<line x1="' + L + '" x2="' + (W - L) + '" y1="' + gy + '" y2="' + gy + '" stroke="#EFEAE0" stroke-dasharray="3 3"/>'; }
+  svg += '<line x1="' + L + '" x2="' + (W - L) + '" y1="' + base + '" y2="' + base + '" stroke="#D9CFB8"/>';
+  items.forEach(function (g, i) {
+    var cx = L + cw * i + cw / 2, h = Math.max(base - y(g.v), g.v > 0 ? 3 : 0), first = i === 0 && g.v > 0;
+    svg += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + (base - h).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="5" fill="url(#' + (first ? 'pbG' : 'pbN') + ')"><title>' + esc(g.full) + '</title></rect>' +
+      '<text x="' + cx.toFixed(1) + '" y="' + (base - h - 6).toFixed(1) + '" text-anchor="middle" font-size="10.5" font-weight="700" fill="' + (first ? '#9A6B18' : '#0B2160') + '">' + g.top + '</text>' +
+      '<text x="' + cx.toFixed(1) + '" y="' + (base + 15) + '" text-anchor="middle" font-size="10.5" font-weight="700" fill="#0B2160">' + esc(g.lab) + '</text>' +
+      '<text x="' + cx.toFixed(1) + '" y="' + (base + 28) + '" text-anchor="middle" font-size="8.2" fill="#8A8676">' + g.sub.replace(' cases', '').replace('% of target', '%') + '</text>';
+  });
+  var M = { rec: ['Recovery made', 'Amount recovered in ' + esc(d.monthLabel) + ' · small figure = % of target'],
+            led: ['Ledgers checked', (d.isCurrent ? 'Recoverable cases with ledger checked in the last ' + d.freshDays + ' days' : 'Recoverable cases with ledger status') + ' · small figure = checked / cases'],
+            act: ['Actions taken', 'Actions recorded in ' + esc(d.monthLabel) + ' · small figure = actions per case'] };
+  var seg = [['rec', 'Recovery'], ['led', 'Ledgers'], ['act', 'Actions']].map(function (x) { return '<button class="' + (pm === x[0] ? 'on' : '') + '" onclick="setR(\'pm\',\'' + x[0] + '\')">' + x[1] + '</button>'; }).join('');
+  return '<div class="chart pc"><div class="pch"><h4>' + ic('chart') + ' ' + (byUnit ? 'Unit-wise' : esc(R.unit) + ' · STO-wise') + ' performance</h4></div>' +
+    '<div class="seg pcs">' + seg + '</div><div class="pcm"><b>' + M[pm][0] + '</b> · ' + M[pm][1] + '</div>' +
+    (items.length ? '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '">' + svg + '</svg>' : '<div class="empty">No cases</div>') +
+    '<div class="pcl"><span><i class="g"></i>Highest</span><span><i class="n"></i>' + (byUnit ? 'Other Units' : 'Other STOs') + '</span>' + (byUnit ? '<span class="tip">Select a Unit above to compare its STOs</span>' : '') + '</div></div>';
 }
 function trendChart(tgt) {
   var d = R.data, m = d.month.split('-'), days = new Date(Number(m[0]), Number(m[1]), 0).getDate();
@@ -1145,11 +1295,11 @@ function upFileChosen(inp) {
 }
 /** keep only the columns the app needs (smaller upload) */
 function upTrim(rows) {
-  var want = ['unit', 'sto', 'stoseries', 'demandid', 'recoveryid', 'dateofdemandorder', 'gstin/temporaryid', 'legalname', 'mobileno.', 'section/act', 'demandstatus', 'originaldemandinrs.', 'pendingdemandinrs.', 'status(active/cancel)'];
+  var want = ['unit', 'sto', 'stoseries', 'demandid', 'recoveryid', 'dateofdemandorder', 'gstin/temporaryid', 'legalname', 'mobileno.', 'section/act', 'demandstatus', 'originaldemandinrs.', 'pendingdemandinrs.', 'status(active/cancel)', 'tradename', 'sourceofdemand'];
   var key = function (s) { return String(s).replace(/\s+/g, '').toLowerCase(); }, cols = null, out = [];
   rows.forEach(function (r) {
     var ks = r.map(key);
-    if (ks.indexOf('demandid') >= 0) { cols = []; ks.forEach(function (k, i) { if (want.indexOf(k) >= 0 || k.indexOf('recoverystatusason') === 0) cols.push(i); }); out.push(cols.map(function (i) { return r[i]; })); return; }
+    if (ks.indexOf('demandid') >= 0) { cols = []; ks.forEach(function (k, i) { if (want.indexOf(k) >= 0 || k.indexOf('recoverystatusason') === 0 || k.indexOf('taxperiod') === 0) cols.push(i); }); out.push(cols.map(function (i) { return r[i]; })); return; }
     if (cols && r.some(function (c) { return String(c).trim(); })) out.push(cols.map(function (i) { return r[i] == null ? '' : r[i]; }));
   });
   return out;
@@ -1161,7 +1311,7 @@ function renderUpPrev() {
     p.mode === 'first' ? 'First list of the app – loads <b>' + esc(p.monthLabel) + '</b>.' : '<b style="color:#A1182B">' + esc(p.monthLabel) + ' is older than the current month ' + esc(p.curLabel) + ' – cannot be loaded.</b>';
   html += '<div class="upbox"><div class="uph">' + ic('sheet') + '<div><b>' + esc(p.catHeader) + '</b><span>' + p.cases + ' cases · ₹' + short(p.pending) + ' pending</span></div></div><div class="upw">' + what + '</div>';
   html += '<table class="upt"><tr><th>Category</th><th>Cases</th><th>Pending</th></tr>' + p.categories.map(function (c) {
-    return '<tr' + (c.cat === 'Recoverable' ? ' class="rc"' : c.cat === 'Not understood' ? ' class="bd"' : '') + '><td>' + esc(CAT_SHORT[c.cat] || c.cat) + '</td><td>' + c.n + '</td><td>₹' + short(c.amt) + '</td></tr>';
+    return '<tr' + (c.cat === 'Recoverable' ? ' class="rc"' : c.cat === 'Not understood' ? ' class="bd"' : c.cat === 'To be decided by STO' ? ' class="td"' : '') + '><td>' + esc(CAT_SHORT[c.cat] || c.cat) + '</td><td>' + c.n + '</td><td>₹' + short(c.amt) + '</td></tr>';
   }).join('') + '</table>';
   html += '<table class="upt"><tr><th>Unit</th><th>Cases</th><th>Recoverable</th></tr>' + p.units.map(function (u) {
     var r = u.cat['Recoverable'] || { n: 0, amt: 0 }; return '<tr><td>' + esc(u.unit) + '</td><td>' + u.cases + '</td><td>' + r.n + ' · ₹' + short(r.amt) + '</td></tr>';
@@ -1169,23 +1319,24 @@ function renderUpPrev() {
   if (p.mode !== 'first') html += '<div class="upc"><span><b>' + p.newCases + '</b>new case' + (p.newCases === 1 ? '' : 's') + '</span><span><b>' + p.gone + '</b>no longer in list</span><span><b>' + p.catChanged + '</b>category changed</span><span><b>' + p.stoChanged + '</b>STO changed</span></div>';
   if (bad) html += '<div class="ban" style="margin:10px 0 0;background:#FBE1E3;border-color:#F3C3C8;color:#A1182B"><b>' + ic('alert') + ' ' + p.badCatCount + (p.badCatCount > 1 ? ' cases' : ' case') + ': category not understood</b>' +
     p.badCat.map(function (b) { return esc(b.unit) + ' · ' + esc(b.demandId) + ' · ' + esc(b.name) + ' – "' + esc(b.text) + '"'; }).join('<br>') + '<br>Use one of: Recoverable · Tribunal/HC/SC/Court case · NCLT, Liquidation Case · Any Other (Rectification, Revision, Litigation etc.) · Payment made through DRC-03 which is not shown in DCR. Correct the file and upload again.</div>';
+  if (p.blankNew || p.blankOld) html += '<div class="ban info" style="margin:10px 0 0"><b>Category left blank in the list</b>' + (p.blankNew ? p.blankNew + (p.blankNew > 1 ? ' new cases' : ' new case') + ': the STO will decide the category (shown as NEW).' : '') + (p.blankNew && p.blankOld ? '<br>' : '') + (p.blankOld ? p.blankOld + (p.blankOld > 1 ? ' cases' : ' case') + ' of last month: last month\'s category is proposed.' : '') + '</div>';
   if (p.noStoCount) html += '<div class="ban" style="margin:10px 0 0"><b>' + p.noStoCount + (p.noStoCount > 1 ? ' cases' : ' case') + ' without STO SERIES</b>They keep last month\'s STO; a completely new case without STO goes to "Not assigned".</div>';
   if (p.newCombos.length) html += '<div class="ban info" style="margin:10px 0 0"><b>New Unit / STO in the list</b>' + p.newCombos.map(esc).join(', ') + ' – will be added to the Lists tab (set PIN there).</div>';
   var ok = !bad && p.mode !== 'old';
-  html += '<button class="btn" ' + (ok ? '' : 'disabled ') + 'onclick="upApply()">' + ic('check') + ' Confirm categories &amp; ' + (p.mode === 'new' ? 'start ' : 'load ') + esc(p.monthLabel) + '</button>' +
-    '<div class="hint" style="text-align:center">After confirming, STOs work only on the ' + ((p.categories.find(function (c) { return c.cat === 'Recoverable'; }) || { n: 0 }).n) + ' Recoverable cases.</div></div>';
+  html += '<button class="btn" ' + (ok ? '' : 'disabled ') + 'onclick="upApply()">' + ic('check') + ' Load proposed categories &amp; ' + (p.mode === 'new' ? 'start ' : 'update ') + esc(p.monthLabel) + '</button>' +
+    '<div class="hint" style="text-align:center">STOs will then <b>Confirm</b> or <b>Change</b> (with reason) each category. Lock the month when done.</div></div>';
   $('upPrev').innerHTML = html;
 }
 function upApply() {
   var p = UP.prev;
-  if (!confirm((p.mode === 'new' ? 'Start ' + p.monthLabel + ' and close ' + p.curLabel + '?' : 'Load the categories for ' + p.monthLabel + '?') + '\n\n' + p.cases + ' cases. Categories become final for the month.')) return;
+  if (!confirm((p.mode === 'new' ? 'Start ' + p.monthLabel + ' and close ' + p.curLabel + '?' : 'Load the categories for ' + p.monthLabel + '?') + '\n\n' + p.cases + ' cases. STOs will confirm or change the proposed categories.')) return;
   busy(true);
   api('applyUpload', S.pin, UP.table, p.month).then(function (r) {
     busy(false); UP.prev = null; toast(r.monthLabel + ' loaded ✓');
-    $('upPrev').innerHTML = '<div class="ban ok" style="margin:10px 0 0"><b>' + ic('check') + ' ' + esc(r.monthLabel) + ' – categories confirmed</b>' + r.cases + ' cases loaded · <b>' + r.recoverable + ' Recoverable</b> (₹' + short(r.recoverablePending) + ') for monitoring' +
+    $('upPrev').innerHTML = '<div class="ban ok" style="margin:10px 0 0"><b>' + ic('check') + ' ' + esc(r.monthLabel) + (r.started ? ' – proposed categories loaded' : ' – list updated') + '</b>' + r.cases + ' cases · <b>' + r.recoverable + ' Recoverable</b> (₹' + short(r.recoverablePending) + ')' + (r.started ? ' · STOs now confirm or change the categories' : ' · case details refreshed, entries and STO decisions kept') + (r.toDecide ? ' · <b>' + r.toDecide + ' new ' + (r.toDecide > 1 ? 'cases' : 'case') + ' for STOs to decide</b>' : '') +
       (r.newCases ? ' · ' + r.newCases + ' new' : '') + (r.archived ? ' · ' + r.archived + ' no longer in list (moved to "Archived Cases")' : '') + (r.noSto ? ' · <b style="color:#A1182B">' + r.noSto + ' without STO – fill in the Cases sheet</b>' : '') +
       (r.combosAdded ? '<br>' + r.combosAdded + ' new Unit/STO added to the Lists tab – set their PINs.' : '') + '</div>' +
-      '<button class="btn gold" onclick="dlLists()">' + ic('download') + ' Download category lists (Excel)</button>';
+      '<div class="hint" style="text-align:center;margin-top:8px">Follow progress in Dashboard → Categories. When all STOs have decided, tap <b>Lock categories</b> below and download the final lists.</div>';
     $('upName').textContent = 'No file chosen';
     try { localStorage.removeItem('rec2_report'); } catch (e) {}
     api('adminInfo', S.pin).then(function (info) { renderAdmin(info); }).catch(function () {});
@@ -1206,12 +1357,13 @@ function dlLists() {
     });
     sum.push(['Total'].concat(tot.reduce(function (a, x) { return a.concat(x); }, [])).concat(T));
     var ws = X.utils.aoa_to_sheet(sum); ws['!cols'] = [{ wch: 22 }].concat(sum[2].slice(1).map(function () { return { wch: 16 }; })); X.utils.book_append_sheet(wb, ws, 'Summary');
-    var add = function (name, rows) { var s = X.utils.aoa_to_sheet([d.headers].concat(rows)); s['!cols'] = [22, 8, 10, 18, 18, 12, 17, 40, 12, 9, 30, 16, 16, 30, 30].map(function (w) { return { wch: w }; }); s['!autofilter'] = { ref: 'A1:O' + (rows.length + 1) }; X.utils.book_append_sheet(wb, s, name); };
+    var add = function (name, rows) { var s = X.utils.aoa_to_sheet([d.headers].concat(rows)); s['!cols'] = [22, 8, 10, 18, 18, 12, 17, 40, 12, 9, 30, 16, 16, 30, 30, 30, 26, 40, 18].map(function (w) { return { wch: w }; }); s['!autofilter'] = { ref: 'A1:S' + (rows.length + 1) }; X.utils.book_append_sheet(wb, s, name); };
     var sorted = d.rows.slice().sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : (b[pi] || 0) - (a[pi] || 0); });
     add('All cases', sorted);
     var SN = { 'Recoverable': 'Recoverable', 'Tribunal / HC / SC / Court': 'Tribunal-HC-SC-Court', 'NCLT / Liquidation': 'NCLT-Liquidation', 'Other (Rectification, Revision, Litigation)': 'Other (Rect-Rev-Litig)', 'Paid via DRC-03 (not in DCR)': 'Paid DRC-03 not in DCR', 'Not decided': 'Not decided' };
     cats.forEach(function (c) { add(SN[c] || c.slice(0, 30), sorted.filter(function (r) { return r[ci] === c; })); });
-    X.writeFile(wb, ('Category-Lists-' + d.division + '-' + d.monthLabel).replace(/[^\w-]+/g, '-') + '.xlsx');
+    var di = d.headers.indexOf('STO decision'); if (di >= 0) { var chg = sorted.filter(function (r) { return r[di] === 'Changed by STO'; }); if (chg.length) add('Changed by STOs', chg); }
+    X.writeFile(wb, ('Category-Lists-' + (d.locked ? 'FINAL-' : 'PROVISIONAL-') + d.division + '-' + d.monthLabel).replace(/[^\w-]+/g, '-') + '.xlsx');
     busy(false); toast('Category lists downloaded ✓');
   }).catch(function (e) { busy(false); toast(String(e)); });
 }
@@ -1381,12 +1533,18 @@ function renderCL() {
     cols = ['Unit', 'STO', 'Type', 'Demand ID', 'GSTIN', 'Legal Name', 'Pending (Rs)', 'Cash (Rs)', 'Credit (Rs)', 'Adjustable (Rs)', 'Adjustable since', 'Checked on', 'Reason not adjusted'];
     rows = list.map(function (c) { return [c.u, c.s, c.t, c.id, c.g, c.n, c.p, c.lo ? c.cash : '', c.lo ? c.cr : '', c.adj, rvDmy(c.as), rvDmy(c.lo), c.na]; });
   } else {
+    var isChg = function (c) { return c.ds === 'done' && c.cp && c.cp !== c.c; }, isPend = function (c) { return c.ds !== 'done'; };
     d.categories.forEach(function (k) { P(k, RV_CATS[k] || k, base.filter(function (c) { return c.c === k; }).length); });
-    list = clQ(base.filter(function (c) { return c.c === sub; })).sort(function (a, b) { return b.p - a.p; });
+    P('chg', 'Changed by STOs', base.filter(isChg).length);
+    var np = base.filter(isPend).length; if (np || sub === 'pend') P('pend', 'Pending with STO', np);
+    list = clQ(base.filter(sub === 'chg' ? isChg : sub === 'pend' ? isPend : function (c) { return c.c === sub; })).sort(function (a, b) { return b.p - a.p; });
     html = clHead(clN(list.length, 'case'), '₹' + short(sum(list, function (c) { return c.p; })) + ' pending');
-    html += list.slice(0, CL.lim).map(function (c) { return clRow(c, '<b>₹' + short(c.p) + '</b><small>pending</small>', c.cd ? esc(c.cd) : ''); }).join('');
-    cols = ['Unit', 'STO', 'Type', 'Demand ID', 'GSTIN', 'Legal Name', 'Pending (Rs)', 'Category', 'Details'];
-    rows = list.map(function (c) { return [c.u, c.s, c.t, c.id, c.g, c.n, c.p, c.c, c.cd]; });
+    html += list.slice(0, CL.lim).map(function (c) {
+      var info = sub === 'chg' ? '<span class="chipx">' + esc(RV_CATS[c.cp] || c.cp) + ' → <b>' + esc(RV_CATS[c.c] || c.c) + '</b></span>' + (c.rs ? '<br><i class="clrm">Reason: ' + esc(c.rs) + '</i>' : '') : sub === 'pend' ? 'Proposed: ' + esc(RV_CATS[c.c] || c.c) : (c.cd ? esc(c.cd) : '');
+      return clRow(c, '<b>₹' + short(c.p) + '</b><small>pending</small>', info);
+    }).join('');
+    cols = ['Unit', 'STO', 'Type', 'Demand ID', 'GSTIN', 'Legal Name', 'Pending (Rs)', 'Category', 'Details', 'Proposed category', 'Reason for change'];
+    rows = list.map(function (c) { return [c.u, c.s, c.t, c.id, c.g, c.n, c.p, c.c, c.cd, c.cp, c.rs]; });
   }
   if (list.length > CL.lim && !(CL.tab === 'rec' && (sub === 'unit' || sub === 'sto'))) html += '<button class="lnk" onclick="CL.lim+=100;renderCL()">Show more (' + (list.length - CL.lim) + ' more) ›</button>';
   if (!list.length) html += '<div class="empty">No cases in this list</div>';

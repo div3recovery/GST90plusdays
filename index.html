@@ -93,7 +93,6 @@
     <button class="lux sm" onclick="openDash()"><span class="ib"><svg><use href="#gDash"/></svg></span><span class="lt"><b>Dashboard</b><small>Progress reports</small></span><span class="chev">&#8250;</span></button>
     <button class="lux sm hide" id="offAdmin" onclick="offAdmin()"><span class="ib"><svg class="ic"><use href="#i-calendar"/></svg></span><span class="lt"><b>Month control</b><small>Upload monthly list · category lists · exports</small></span><span class="chev">&#8250;</span></button>
   </div>
-  <div class="lux-foot slim"><span class="hdiv"><i></i></span><div>Developed by <b>Mehul Ranavasiya</b> &middot; Gandhinagar Division</div></div>
 </div>
 
 <!-- CASE LISTS -->
@@ -119,6 +118,7 @@
 <div id="sHome" class="v hide">
   <div class="who"><span class="ib sm"><svg class="ic"><use href="#i-user"/></svg></span><div style="flex:1;min-width:0"><span>Logged in as</span><b id="whoName"></b></div><button onclick="logout()"><svg class="ic"><use href="#i-logout"/></svg> Change</button></div>
   <div id="syncHome" class="ban info hide"></div>
+  <div id="myStand" class="mys hide" onclick="openDash()"></div>
   <div class="lux-list">
     <button class="lux sm" onclick="openCat()"><span class="ib"><svg class="ic"><use href="#i-folder"/></svg></span><span class="lt"><span class="lh"><b>Case Categories</b><span class="pc" id="tCat"></span></span><small id="tCatS">Decide / confirm categories</small></span><span class="chev">&#8250;</span></button>
     <button class="lux sm" onclick="openLedger()"><span class="ib"><svg class="ic"><use href="#i-ledger"/></svg></span><span class="lt"><span class="lh"><b>Ledger Balance</b><span class="pc" id="tLed"></span></span><small>Daily check of cash &amp; credit ledger</small></span><span class="chev">&#8250;</span></button>
@@ -126,11 +126,11 @@
     <button class="lux sm" onclick="openList('act')"><span class="ib"><svg class="ic"><use href="#i-gavel"/></svg></span><span class="lt"><span class="lh"><b>Actions Taken</b><span class="pc" id="tAct"></span></span><small>Spot visit, attachments, notices</small></span><span class="chev">&#8250;</span></button>
     <button class="lux sm" onclick="openDash()"><span class="ib"><svg><use href="#gDash"/></svg></span><span class="lt"><span class="lh"><b>Dashboard</b><span class="pc"></span></span><small>Progress reports</small></span><span class="chev">&#8250;</span></button>
   </div>
-  <div class="lux-foot slim"><span class="hdiv"><i></i></span><div>Developed by <b>Mehul Ranavasiya</b> &middot; Gandhinagar Division</div></div>
 </div>
 
 <!-- CATEGORIES LIST -->
 <div id="sCat" class="v hide">
+  <div class="tyw"><div class="seg tyseg" id="ty_sCat"></div></div>
   <div id="catBan" class="ban"></div>
   <div class="pills" id="catPills"></div>
   <div class="srch"><input id="qCat" type="search" placeholder="Search taxpayer or GSTIN" oninput="renderCat()"></div>
@@ -140,15 +140,18 @@
 
 <!-- CATEGORY FORM -->
 <div id="sCatForm" class="v hide padbar">
+  <div class="cbox" id="catBox"></div>
+  <div class="sec hide" id="catCur"></div>
   <div class="sec"><h4><i><svg class="ic"><use href="#i-folder"/></svg></i>Select category</h4><div class="opt" id="catOpts"></div></div>
   <div class="sec hide" id="catDet"><h4><i><svg class="ic"><use href="#i-edit"/></svg></i><span id="catDetT">Details</span></h4><div id="catFields"></div></div>
-  <div class="sec hide" id="catCur"></div>
+  <div class="sec hide" id="catRsn"><h4><i><svg class="ic"><use href="#i-edit"/></svg></i><span id="catRsnT">Reason for change</span></h4><textarea id="catReason" rows="3" maxlength="300" style="margin-top:8px" placeholder="e.g. Appeal filed before GSTAT on 12-11-2026, appeal no. ..."></textarea></div>
   <div id="catErr" class="err" style="margin:10px 16px"></div>
   <div class="savebar"><button class="btn sec2" onclick="goBack()">Cancel</button><button class="btn" id="catSave" onclick="saveCat()">Save category</button></div>
 </div>
 
 <!-- LEDGER QUICK LIST -->
 <div id="sLedger" class="v hide">
+  <div class="tyw"><div class="seg tyseg" id="ty_sLedger"></div></div>
   <div class="prg"><span id="ledPrg"></span><div class="bar gr"><i id="ledBar" style="width:0"></i></div></div>
   <div class="pills" id="ledPills"></div>
   <div class="srch"><input id="qLed" type="search" placeholder="Search taxpayer or GSTIN" oninput="renderLedger()"></div>
@@ -157,6 +160,7 @@
 
 <!-- CASE LIST (recovery / actions / unit head) -->
 <div id="sList" class="v hide">
+  <div class="tyw"><div class="seg tyseg" id="ty_sList"></div></div>
   <div class="pills" id="listPills"></div>
   <div class="srch"><input id="qList" type="search" placeholder="Search taxpayer, GSTIN or Demand ID" oninput="renderList()"></div>
   <div class="list" id="listRows"></div>
@@ -164,6 +168,7 @@
 
 <!-- RECOVERY FORM -->
 <div id="sRec" class="v hide padbar">
+  <div class="cbox" id="recBox"></div>
   <div class="sec"><h4><i><svg class="ic"><use href="#i-rupee"/></svg></i>Amount recovered now</h4>
     <input id="rAmt" type="text" inputmode="numeric" placeholder="0" style="font:700 22px Inter,sans-serif;margin-top:8px" oninput="recPreview()">
     <label for="rDate">Date of recovery</label><input id="rDate" type="date"></div>
@@ -178,6 +183,7 @@
 
 <!-- ACTION FORM -->
 <div id="sAct" class="v hide padbar">
+  <div class="cbox" id="actBox"></div>
   <div class="sec"><h4><i><svg class="ic"><use href="#i-plus"/></svg></i>Add new action</h4><div class="chips" id="aTypes"></div>
     <div class="row2"><div><label for="aDate">Date</label><input id="aDate" type="date"></div><div><label for="aRef">Order / ref. no.</label><input id="aRef" type="text"></div></div>
     <label for="aRem">Remarks</label><input id="aRem" type="text" placeholder="e.g. SBI a/c attached, owner met">
