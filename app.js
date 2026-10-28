@@ -2,7 +2,7 @@
 var API_URL = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) || '';
 var S = { meta: null, role: '', unit: '', sto: '', pin: '', by: '', d: null, stack: [], screen: '', head: null, cur: null,
           catF: '', ledF: 'todo', listMode: 'rec', listF: 'all', catSel: '', recMode: '', actType: '', fld: {} };
-var R = { pm: 'rec', data: null, tab: 'ov', unit: 'all', type: 'all', act: 'all', per: 'month', recView: 'unit', showAll: false };
+var R = { rkBy: 'amt', pm: 'rec', data: null, tab: 'ov', unit: 'all', type: 'all', act: 'all', per: 'month', recView: 'unit', showAll: false };
 
 /* ---------------- helpers ---------------- */
 function $(id) { return document.getElementById(id); }
@@ -781,17 +781,21 @@ function renderOverview() {
       '<div class="ai"><span class="dot r"></span><span>STOs with no update in ' + d.freshDays + ' days<small>' + (noUp.length ? noUp.slice(0, 8).map(function (r) { return shortU(r.unit) + ' ' + r.sto; }).join(' · ') + (noUp.length > 8 ? ' · +' + (noUp.length - 8) : '') : 'All STOs updated') + '</small></span><b>' + noUp.length + '</b></div>' +
       '<div class="ai"><span class="dot a"></span><span>Ledger adjustable, not set off ' + d.setoffDays + '+ days<small>' + (od.length ? odN + ' cases · ' + od.slice(0, 6).map(function (x) { return shortU(x.r.unit) + ' ' + x.r.sto; }).join(' · ') : 'None') + '</small></span><b>&#8377;' + short(odAmt) + '</b></div></div>';
   }
+  var AM = R.rkBy === 'amt';
   var list = rowsF(d.rows).map(function (r) { var f = pick(r); f.unit = r.unit; f.sto = r.sto; f.p = pctOf(f); return f; }).filter(function (f) { return f.cases > 0; })
-    .sort(function (a, b) { return b.p - a.p || b.recovered - a.recovered; });
+    .sort(function (a, b) { return AM ? b.recovered - a.recovered || b.p - a.p : b.p - a.p || b.recovered - a.recovered; });
+  var topAmt = Math.max.apply(null, list.map(function (f) { return f.recovered; }).concat([1]));
   var medal = [1, 2, 3], shown = R.showAll ? list : list.slice(0, 10);
-  html += '<div class="rk"><h4>' + ic('trophy') + ' STO ranking · % of target (' + esc(d.monthLabel) + ')</h4>' + shown.map(function (f, i) {
-    var m = i < 3 && f.recovered > 0;
-    return '<div class="rr"><span class="no2">' + (m ? '<span class="md md' + medal[i] + '">' + medal[i] + '</span>' : i + 1) + '</span><span class="nm">' + shortU(f.unit) + ' · ' + esc(f.sto) + '</span><div class="bar"><i style="width:' + Math.min(100, f.p * 100).toFixed(0) + '%"></i></div><span class="p">' + (f.p * 100).toFixed(1) + '%</span></div>';
+  html += '<div class="rk"><div class="rkh"><h4>' + ic('trophy') + ' STO ranking · ' + esc(d.monthLabel) + '</h4>' + rkSeg() + '</div>' + shown.map(function (f, i) {
+    var m = i < 3 && f.recovered > 0, wv = AM ? f.recovered * 100 / topAmt : f.p * 100;
+    return '<div class="rr"><span class="no2">' + (m ? '<span class="md md' + medal[i] + '">' + medal[i] + '</span>' : i + 1) + '</span><span class="nm">' + shortU(f.unit) + ' · ' + esc(f.sto) + '</span><div class="bar"><i style="width:' + Math.min(100, wv).toFixed(0) + '%"></i></div><span class="p">' + (AM ? '&#8377;' + short(f.recovered) + '<small>' + (f.p * 100).toFixed(1) + '%</small>' : (f.p * 100).toFixed(1) + '%<small>&#8377;' + short(f.recovered) + '</small>') + '</span></div>';
   }).join('') + (list.length > 10 ? '<button class="lnk" onclick="R.showAll=!R.showAll;renderReport()">' + (R.showAll ? 'Show top 10' : 'View all ' + list.length + ' STOs ›') + '</button>' : '') + '</div>';
   if (R.unit === 'all') {
-    var us = unitsOf(d.rows).map(function (u) { var G2 = totals(d.rows, u); return { u: u, p: pctOf(G2), rec: G2.recovered, n: G2.cases }; }).filter(function (x) { return x.n > 0; }).sort(function (a, b) { return b.p - a.p; });
-    html += '<div class="rk"><h4>' + ic('building') + ' Units · % of target</h4>' + us.map(function (x) {
-      return '<div class="rr"><span class="nm" style="width:130px">' + esc(x.u) + '</span><div class="bar"><i style="width:' + Math.min(100, x.p * 100).toFixed(0) + '%"></i></div><span class="p">' + (x.p * 100).toFixed(1) + '%</span></div>';
+    var us = unitsOf(d.rows).map(function (u) { var G2 = totals(d.rows, u); return { u: u, p: pctOf(G2), rec: G2.recovered, n: G2.cases }; }).filter(function (x) { return x.n > 0; })
+      .sort(function (a, b) { return AM ? b.rec - a.rec || b.p - a.p : b.p - a.p || b.rec - a.rec; });
+    var uTop = Math.max.apply(null, us.map(function (x) { return x.rec; }).concat([1]));
+    html += '<div class="rk"><div class="rkh"><h4>' + ic('building') + ' Unit ranking</h4>' + rkSeg() + '</div>' + us.map(function (x) {
+      return '<div class="rr"><span class="nm" style="width:130px">' + esc(x.u) + '</span><div class="bar"><i style="width:' + Math.min(100, AM ? x.rec * 100 / uTop : x.p * 100).toFixed(0) + '%"></i></div><span class="p">' + (AM ? '&#8377;' + short(x.rec) + '<small>' + (x.p * 100).toFixed(1) + '%</small>' : (x.p * 100).toFixed(1) + '%<small>&#8377;' + short(x.rec) + '</small>') + '</span></div>';
     }).join('') + '</div>';
   }
   html += '<button class="share" onclick="shareSummary()">' + ic('share') + ' Share summary (WhatsApp)</button><button class="lnk" onclick="window.print()">' + ic('print') + ' Print / Save as PDF</button>';
@@ -811,6 +815,7 @@ var TROPHY = '<svg viewBox="0 0 64 64" class="tro"><defs><linearGradient id="tG"
   '<path d="M28 35h8v8h-8z" fill="url(#tG)"/><rect x="21" y="43" width="22" height="7" rx="2" fill="url(#tG)"/><rect x="17" y="50" width="30" height="5" rx="2" fill="url(#tG)"/>' +
   '<path d="M32 15.5l2.1 4.3 4.7.7-3.4 3.3.8 4.7-4.2-2.2-4.2 2.2.8-4.7-3.4-3.3 4.7-.7z" fill="#0B2470" opacity=".75"/></svg>';
 function byAmt(rep) { return stoRank(rep).filter(function (x) { return x.recovered > 0; }).sort(function (a, b) { return b.recovered - a.recovered; }); }
+function rkSeg() { return '<span class="rks"><button class="' + (R.rkBy === 'amt' ? 'on' : '') + '" onclick="setR(\'rkBy\',\'amt\')">&#8377; Amount</button><button class="' + (R.rkBy === 'pct' ? 'on' : '') + '" onclick="setR(\'rkBy\',\'pct\')">% Target</button></span>'; }
 function somCard() {
   var d = R.data, top, label, live = false;
   if (!d.isCurrent) { top = byAmt(d).slice(0, 3); label = d.monthLabel; }
@@ -907,8 +912,10 @@ function renderRecovery() {
   var d = R.data, html = '<div class="pills"><button class="pill sub2' + (R.recView === 'unit' ? ' on' : '') + '" onclick="setR(\'recView\',\'unit\')">By Unit</button><button class="pill sub2' + (R.recView === 'rank' ? ' on' : '') + '" onclick="setR(\'recView\',\'rank\')">' + ic('trophy') + ' STO ranking</button></div>';
   var rows = rowsF(d.rows).map(function (r) { var f = pick(r); f.unit = r.unit; f.sto = r.sto; f.target = f.pending * d.targetPct / 100; f.p = f.target ? f.recovered / f.target : 0; return f; });
   if (R.recView === 'rank') {
-    html += rows.filter(function (r) { return r.cases > 0; }).sort(function (a, b) { return b.p - a.p || b.recovered - a.recovered; }).map(function (r, i) {
-      return '<div class="rk" style="margin-top:8px;display:flex;gap:10px;align-items:center"><b style="width:26px;text-align:center;color:var(--ind)">' + (i + 1) + '</b><div style="flex:1;min-width:0"><b style="font-size:13px">' + esc(r.unit) + ' · ' + esc(r.sto) + '</b><div class="hint" style="margin:1px 0 0">&#8377;' + short(r.recovered) + ' of &#8377;' + short(r.target) + ' · ' + r.cases + ' cases</div><div class="bar"><i style="width:' + Math.min(100, r.p * 100).toFixed(0) + '%"></i></div></div><b style="color:var(--ind3)">' + (r.p * 100).toFixed(1) + '%</b></div>';
+    var AM = R.rkBy === 'amt';
+    html += '<div class="rkbar">Rank by ' + rkSeg() + '</div>';
+    html += rows.filter(function (r) { return r.cases > 0; }).sort(function (a, b) { return AM ? b.recovered - a.recovered || b.p - a.p : b.p - a.p || b.recovered - a.recovered; }).map(function (r, i) {
+      return '<div class="rk" style="margin-top:8px;display:flex;gap:10px;align-items:center"><b style="width:26px;text-align:center;color:var(--ind)">' + (i + 1) + '</b><div style="flex:1;min-width:0"><b style="font-size:13px">' + esc(r.unit) + ' · ' + esc(r.sto) + '</b><div class="hint" style="margin:1px 0 0">&#8377;' + short(r.recovered) + ' of &#8377;' + short(r.target) + ' · ' + r.cases + ' cases</div><div class="bar"><i style="width:' + Math.min(100, r.p * 100).toFixed(0) + '%"></i></div></div><b style="color:var(--ind3);text-align:right">' + (AM ? '&#8377;' + short(r.recovered) + '<small style="display:block;font-weight:500;color:#888;font-size:11px">' + (r.p * 100).toFixed(1) + '%</small>' : (r.p * 100).toFixed(1) + '%<small style="display:block;font-weight:500;color:#888;font-size:11px">&#8377;' + short(r.recovered) + '</small>') + '</b></div>';
     }).join('');
   } else {
     unitsOf(rows).forEach(function (u) {

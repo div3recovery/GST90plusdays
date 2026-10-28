@@ -587,3 +587,10 @@ input:focus,select:focus,textarea:focus{border-color:var(--ind);box-shadow:0 0 0
 .msS button.on{background:#fff;color:var(--ind);box-shadow:0 1px 3px rgba(11,36,112,.15)}
 .msH{flex-wrap:wrap;row-gap:4px}.msH .msK{white-space:nowrap}
 .msL b{white-space:nowrap}.msL span{white-space:nowrap;min-width:58px}.msL em{white-space:normal;text-align:right}
+/* ranking switch (Dashboard) */
+.rkh{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.rks{display:inline-flex;background:#F1EEE5;border-radius:8px;padding:2px;flex:none}
+.rks button{border:0;background:none;font:600 11px Inter,sans-serif;color:#77736A;padding:5px 9px;border-radius:6px}
+.rks button.on{background:#fff;color:var(--ind);box-shadow:0 1px 3px rgba(11,36,112,.15)}
+.rr .p{width:auto;min-width:62px;line-height:1.1}.rr .p small{display:block;font-size:10px;font-weight:500;color:#999}
+.rkbar{display:flex;align-items:center;gap:8px;margin:10px 14px 0;font-size:12px;color:#77736A}
