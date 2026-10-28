@@ -577,3 +577,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--ind);box-shadow:0 0 0
   #clBody>.cl{grid-column:auto}
 }
 @media (min-width:1360px){ #dBody>.kgrid{grid-template-columns:repeat(4,1fr)} }
+
+.oifull{display:flex;gap:8px;align-items:flex-start;margin-top:10px;padding:9px 10px;border:1px dashed #D9B262;border-radius:10px;background:#FBF6E8;font-size:12.5px;line-height:1.45;color:#4A4A5A;cursor:pointer}
+.oifull input{margin-top:3px;flex:none;width:16px;height:16px}
+.somS{grid-template-columns:1.6fr 1fr 1fr}.somS .big b{font-size:19px}.somR b{color:#FFE6A0}
+.msH{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px}.msH .msK{margin:0}
+.msS{display:inline-flex;background:#F1EEE5;border-radius:8px;padding:2px;flex:none}
+.msS button{border:0;background:none;font:600 10.5px Inter,sans-serif;color:#77736A;padding:4px 7px;border-radius:6px}
+.msS button.on{background:#fff;color:var(--ind);box-shadow:0 1px 3px rgba(11,36,112,.15)}
+.msH{flex-wrap:wrap;row-gap:4px}.msH .msK{white-space:nowrap}
+.msL b{white-space:nowrap}.msL span{white-space:nowrap;min-width:58px}.msL em{white-space:normal;text-align:right}

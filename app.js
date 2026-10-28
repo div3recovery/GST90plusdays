@@ -169,25 +169,32 @@ function loadStanding() {
   if (!S.rep) { try { var c = JSON.parse(recall('report') || 'null'); if (c && c.rows) { S.rep = c; S.repAt = 0; renderStanding(); } } catch (e) {} }
   api('getReport', '').then(function (r) { S.rep = r; S.repAt = Date.now(); store('report', JSON.stringify(r)); if (S.screen === 'sHome') renderStanding(); }).catch(function () {});
 }
+function setStBy(v, ev) { if (ev) ev.stopPropagation(); S.stBy = v; store('stBy', v); renderStanding(); }
 function renderStanding() {
   var el = $('myStand'), r = S.rep; if (!r || !r.rows) { el.classList.add('hide'); return; }
-  var L = stoRank(r), i = -1;
+  var by = S.stBy || recall('stBy') || 'amt', A = by === 'amt';            // rank by Amount recovered (default) or % of target
+  var val = function (x) { return A ? x.recovered : x.pct; };
+  var L = stoRank(r).sort(function (a, b) { return val(b) - val(a) || b.recovered - a.recovered; }), i = -1;
   L.forEach(function (x, k) { if (x.unit === S.unit && x.sto === S.sto) i = k; });
   if (i < 0) { el.classList.add('hide'); return; }
-  var me = L[i], n = L.length, rk = 1 + L.filter(function (x) { return x.pct > me.pct + 1e-9; }).length, U = L.filter(function (x) { return x.unit === S.unit; }), ur = 1 + U.filter(function (x) { return x.pct > me.pct + 1e-9; }).length;
-  var uRec = U.reduce(function (a, x) { return a + x.recovered; }, 0), uTg = U.reduce(function (a, x) { return a + x.target; }, 0), uAvg = uTg ? uRec * 100 / uTg : 0;
-  var need = function (pct) { return Math.max(0, Math.ceil(pct / 100 * me.target - me.recovered) + 1); }, gap;
+  var me = L[i], n = L.length, ahead = function (list) { return 1 + list.filter(function (x) { return val(x) > val(me) + 1e-9; }).length; };
+  var rk = ahead(L), U = L.filter(function (x) { return x.unit === S.unit; }), ur = ahead(U);
+  var uRec = U.reduce(function (a, x) { return a + x.recovered; }, 0), uTg = U.reduce(function (a, x) { return a + x.target; }, 0), uAvg = uTg ? uRec * 100 / uTg : 0, uAvgAmt = U.length ? uRec / U.length : 0;
+  var need = function (o) { return Math.max(0, Math.ceil(A ? o.recovered - me.recovered : o.pct / 100 * me.target - me.recovered) + 1); }, gap;
   if (rk === 1) gap = me.recovered > 0 ? ic('trophy') + ' <b>You are leading the Division</b> – keep it up!' : 'Record your first recovery to get on the board';
-  else if (rk > 5 && !(L[4].pct > me.pct)) gap = 'Record a recovery to move up the board';
-  else if (rk > 5) gap = 'Only <b>&#8377;' + short(need(L[4].pct)) + '</b> more to reach the <b>Top 5</b>';
-  else { var ab = L[rk - 2]; gap = '<b>&#8377;' + short(need(ab.pct)) + '</b> more to overtake <b>#' + (rk - 1) + '</b> (' + esc(ab.sto) + ' · ' + esc(shortU(ab.unit)) + ')'; }
+  else if (rk > 5 && !(val(L[4]) > val(me))) gap = 'Record a recovery to move up the board';
+  else if (rk > 5) gap = 'Only <b>&#8377;' + short(need(L[4])) + '</b> more to reach the <b>Top 5</b>';
+  else { var ab = L[rk - 2]; gap = '<b>&#8377;' + short(need(ab)) + '</b> more to overtake <b>#' + (rk - 1) + '</b> (' + esc(ab.sto) + ' · ' + esc(shortU(ab.unit)) + ')'; }
+  var top = Math.max(L[0].recovered, 1), w = function (x) { return Math.min(100, A ? x * 100 / top : x).toFixed(1); };
   var won = r.som && r.som.top && r.som.top[0] && r.som.top[0].unit === S.unit && r.som.top[0].sto === S.sto;
   el.classList.remove('hide');
   el.innerHTML = (won ? '<div class="msW">' + TROPHY + '<span>You were <b>STO of the Month</b> for ' + esc(r.som.monthLabel) + '</span></div>' : '') +
     '<div class="msT"><div class="msR"><span>Rank</span><b>' + rk + '</b><em>of ' + n + '</em></div><div class="msB">' +
-    '<span class="msK">My standing · ' + esc(r.monthLabel) + '</span>' +
-    '<div class="msL"><span>You</span><b>' + me.pct.toFixed(1) + '%</b><em>of target · &#8377;' + short(me.recovered) + '</em></div><div class="bar g"><i style="width:' + Math.min(100, me.pct).toFixed(1) + '%"></i></div>' +
-    '<div class="msL"><span>' + esc(shortU(S.unit)) + ' average</span><b>' + uAvg.toFixed(1) + '%</b><em>Rank ' + ur + ' of ' + U.length + ' in Unit</em></div><div class="bar"><i style="width:' + Math.min(100, uAvg).toFixed(1) + '%"></i></div>' +
+    '<div class="msH"><span class="msK">My standing · ' + esc(r.monthLabel) + '</span><span class="msS"><button class="' + (A ? 'on' : '') + '" onclick="setStBy(\'amt\',event)">&#8377; Amount</button><button class="' + (A ? '' : 'on') + '" onclick="setStBy(\'pct\',event)">% Target</button></span></div>' +
+    (A ? '<div class="msL"><span>You</span><b>&#8377;' + short(me.recovered) + '</b><em>' + me.pct.toFixed(1) + '% of target</em></div><div class="bar g"><i style="width:' + w(me.recovered) + '%"></i></div>' +
+         '<div class="msL"><span>' + esc(shortU(S.unit)) + ' avg</span><b>&#8377;' + short(uAvgAmt) + '</b><em>Rank ' + ur + ' of ' + U.length + ' in Unit</em></div><div class="bar"><i style="width:' + w(uAvgAmt) + '%"></i></div>'
+       : '<div class="msL"><span>You</span><b>' + me.pct.toFixed(1) + '%</b><em>of target · &#8377;' + short(me.recovered) + '</em></div><div class="bar g"><i style="width:' + w(me.pct) + '%"></i></div>' +
+         '<div class="msL"><span>' + esc(shortU(S.unit)) + ' average</span><b>' + uAvg.toFixed(1) + '%</b><em>Rank ' + ur + ' of ' + U.length + ' in Unit</em></div><div class="bar"><i style="width:' + w(uAvg) + '%"></i></div>') +
     '</div></div><div class="msG">' + gap + '</div>';
 }
 function renderHome() {
@@ -803,11 +810,12 @@ var TROPHY = '<svg viewBox="0 0 64 64" class="tro"><defs><linearGradient id="tG"
   '<path d="M20 10h24v14a12 12 0 0 1-24 0z" fill="url(#tG)"/><path d="M20 14h-8v4a9 9 0 0 0 9 9M44 14h8v4a9 9 0 0 1-9 9" fill="none" stroke="url(#tG)" stroke-width="3.4" stroke-linecap="round"/>' +
   '<path d="M28 35h8v8h-8z" fill="url(#tG)"/><rect x="21" y="43" width="22" height="7" rx="2" fill="url(#tG)"/><rect x="17" y="50" width="30" height="5" rx="2" fill="url(#tG)"/>' +
   '<path d="M32 15.5l2.1 4.3 4.7.7-3.4 3.3.8 4.7-4.2-2.2-4.2 2.2.8-4.7-3.4-3.3 4.7-.7z" fill="#0B2470" opacity=".75"/></svg>';
+function byAmt(rep) { return stoRank(rep).filter(function (x) { return x.recovered > 0; }).sort(function (a, b) { return b.recovered - a.recovered; }); }
 function somCard() {
   var d = R.data, top, label, live = false;
-  if (!d.isCurrent) { top = stoRank(d).filter(function (x) { return x.recovered > 0; }).slice(0, 3); label = d.monthLabel; }
+  if (!d.isCurrent) { top = byAmt(d).slice(0, 3); label = d.monthLabel; }
   else if (d.som && d.som.top && d.som.top.length) { top = d.som.top; label = d.som.monthLabel; }
-  var lead = d.isCurrent ? stoRank(d).filter(function (x) { return x.recovered > 0; })[0] : null;
+  var lead = d.isCurrent ? byAmt(d)[0] : null;
   if (!top || !top.length) {
     if (!lead) return '';
     top = [lead]; label = d.monthLabel; live = true;
@@ -815,11 +823,11 @@ function somCard() {
   var w = top[0], who = function (x) { return esc(x.sto) + ' · ' + esc(x.unit); };
   var h = '<div class="som' + (live ? ' live' : '') + '"><div class="somT">' + TROPHY + '<div><span class="somK">' + (live ? 'Race for STO of the Month · ' : 'STO of the Month · ') + esc(label) + '</span>' +
     '<b class="somN">' + who(w) + '</b>' + (w.name ? '<span class="somP">' + esc(w.name) + '</span>' : '') + '</div></div>' +
-    '<div class="somS"><div><b>&#8377;' + short(w.recovered) + '</b><span>recovered</span></div><div><b>' + w.pct.toFixed(1) + '%</b><span>of target</span></div><div><b>' + (w.actions || 0) + '</b><span>actions</span></div></div>';
+    '<div class="somS"><div class="big"><b>&#8377;' + short(w.recovered) + '</b><span>amount recovered</span></div><div><b>' + (w.actions || 0) + '</b><span>actions</span></div><div><b>' + (w.cases || 0) + '</b><span>cases</span></div></div>';
   if (live) h += '<div class="somF">Leading so far · the STO of the Month is announced when ' + esc(label) + ' closes</div>';
   else {
-    if (top.length > 1) h += '<div class="somR">' + top.slice(1).map(function (x, i) { return '<span><i class="md md' + (i + 2) + '">' + (i + 2) + '</i>' + who(x) + ' · ' + x.pct.toFixed(1) + '%</span>'; }).join('') + '</div>';
-    if (lead && d.isCurrent) h += '<div class="somF">' + esc(d.monthLabel) + ' race · leading now: <b>' + who(lead) + '</b> (' + lead.pct.toFixed(1) + '%)</div>';
+    if (top.length > 1) h += '<div class="somR">' + top.slice(1).map(function (x, i) { return '<span><i class="md md' + (i + 2) + '">' + (i + 2) + '</i>' + who(x) + ' · <b>&#8377;' + short(x.recovered) + '</b></span>'; }).join('') + '</div>';
+    if (lead && d.isCurrent) h += '<div class="somF">' + esc(d.monthLabel) + ' race · leading now: <b>' + who(lead) + '</b> (&#8377;' + short(lead.recovered) + ')</div>';
   }
   return h + '</div>';
 }
@@ -1391,30 +1399,37 @@ function oiFileChosen(inp) {
         return t.getUTCFullYear() + '-' + p(t.getUTCMonth() + 1) + '-' + p(t.getUTCDate()) + 'T' + p(t.getUTCHours()) + ':' + p(t.getUTCMinutes()) + ':' + p(t.getUTCSeconds());
       };
       OI.table = table.slice(hi).map(function (r, k) { return k === 0 ? r : r.map(function (c, i) { return dcols.indexOf(i) >= 0 && typeof c === 'number' && c > 20000 ? wall(c) : c; }); });
-      return api('previewOldImport', S.pin, OI.table);
+      return api('previewOldImport', S.pin, OI.table, $('oiFull').checked);
     });
   }).then(function (p) { busy(false); OI.prev = p; renderOiPrev(); })
     .catch(function (e) { busy(false); $('oiPrev').innerHTML = '<div class="ban" style="margin:10px 0 0;background:#FBE1E3;border-color:#F3C3C8;color:#A1182B"><b>' + ic('alert') + ' File not accepted</b>' + esc(String(e)) + '</div>'; });
 }
+function oiFullChanged() {
+  if (!OI.table) return; busy(true);
+  api('previewOldImport', S.pin, OI.table, $('oiFull').checked).then(function (p) { busy(false); OI.prev = p; renderOiPrev(); }).catch(function (e) { busy(false); toast(String(e)); });
+}
 function renderOiPrev() {
   var p = OI.prev, html = '<div class="upbox"><div class="uph">' + ic('refresh') + '<div><b>Old app entries after ' + esc(p.from) + '</b><span>' + (p.rows ? p.rows + (p.rows === 1 ? ' new entry' : ' new entries') + ' · up to ' + esc(p.to) : 'nothing new') + '</span></div></div>';
-  if (!p.rows) { $('oiPrev').innerHTML = html + '<div class="upw">No entries after the last import. Nothing to do.</div></div>'; return; }
+  if (!p.rows && !p.full) { $('oiPrev').innerHTML = html + '<div class="upw">No entries after the last import. Nothing to do. (To re-check everything, tick "Re-check ALL old app entries" above.)</div></div>'; return; }
+  if (p.full) html += '<div class="upw"><b>Full re-check:</b> ' + p.rows + ' old app entries checked · <b>' + p.rec + ' recoveries (₹' + short(p.recAmt) + ') missing in this app</b> will be added' + (p.monthFixed ? ' · ' + p.monthFixed + ' earlier entries moved to the month they were reported' : '') + ' · ' + p.dup + ' already present. Old app total recovery: <b>₹' + short(p.oldTotal || 0) + '</b>.</div>';
   html += '<div class="upc"><span><b>' + p.rec + '</b>recoveries</span><span><b>₹' + short(p.recAmt) + '</b>recovered</span><span><b>' + p.act + '</b>actions</span><span><b>' + p.led + '</b>ledger</span></div>';
   if (p.dup) html += '<div class="upw">' + p.dup + ' entries are already in this app – they will be skipped.</div>';
   if (p.sample.length) html += '<table class="upt"><tr><th>Date</th><th>Taxpayer · STO</th><th>Amount</th></tr>' + p.sample.map(function (x) { return '<tr><td>' + esc(x.d.slice(0, 5)) + '</td><td style="text-align:left">' + esc(x.n) + '<br><small style="color:#5E6580">' + esc(shortU(x.u)) + ' · ' + esc(x.s) + ' · ' + esc(x.m) + '</small></td><td>₹' + short(x.a) + '</td></tr>'; }).join('') + '</table>';
   var st = Object.keys(p.stos).sort();
   if (st.length) html += '<div class="upw"><b>Entries by STO:</b> ' + st.map(function (k) { return esc(k.replace('Ghatak ', 'G-').replace(/ \([^)]*\)/, '')) + ' ' + p.stos[k]; }).join(' · ') + '</div>';
   if (p.unmatched.length) html += '<div class="ban" style="margin:10px 0 0"><b>' + p.unmatched.length + ' entr' + (p.unmatched.length > 1 ? 'ies' : 'y') + ' for cases not in the current list</b>' + p.unmatched.slice(0, 10).map(esc).join('<br>') + (p.unmatched.length > 10 ? '<br>…' : '') + '<br>They are kept in the sheet "Old App Import".</div>';
-  html += '<button class="btn" onclick="oiApply()">' + ic('check') + ' Import ' + p.rows + ' entries</button></div>';
+  html += '<button class="btn" onclick="oiApply()">' + ic('check') + (p.full ? ' Re-check &amp; fix' : ' Import ' + p.rows + ' entries') + '</button></div>';
   $('oiPrev').innerHTML = html;
 }
 function oiApply() {
-  if (!confirm('Import ' + OI.prev.rows + ' entries of the old app into this app?')) return;
+  if (!confirm(OI.prev.full ? 'Re-check all old app entries and add the missing ones?' : 'Import ' + OI.prev.rows + ' entries of the old app into this app?')) return;
   busy(true);
-  api('applyOldImport', S.pin, OI.table).then(function (r) {
+  api('applyOldImport', S.pin, OI.table, !!OI.prev.full).then(function (r) {
     busy(false); OI = {}; $('oiName').textContent = 'No file chosen';
     try { localStorage.removeItem('rec2_report'); } catch (e) {}
-    $('oiPrev').innerHTML = '<div class="ban ok" style="margin:10px 0 0"><b>' + ic('check') + ' Imported</b>' + r.rec + (r.rec === 1 ? ' recovery' : ' recoveries') + ' (₹' + short(r.recAmt) + ') · ' + clN(r.act, 'action') + ' · ' + r.led + (r.led === 1 ? ' ledger entry' : ' ledger entries') + (r.unmatched.length ? ' · ' + r.unmatched.length + ' not found (see sheet "Old App Import")' : '') + '</div>';
+    $('oiPrev').innerHTML = '<div class="ban ok" style="margin:10px 0 0"><b>' + ic('check') + ' Imported</b>' + r.rec + (r.rec === 1 ? ' recovery' : ' recoveries') + ' (₹' + short(r.recAmt) + ') · ' + clN(r.act, 'action') + ' · ' + r.led + (r.led === 1 ? ' ledger entry' : ' ledger entries') + (r.unmatched.length ? ' · ' + r.unmatched.length + ' not found (see sheet "Old App Import")' : '') + (r.monthFixed ? ' · month corrected for ' + r.monthFixed + ' earlier entries' : '') +
+      '<br>Old app total recovery <b>₹' + short(r.oldTotal || 0) + '</b> · this app <b>₹' + short(r.appTotal || 0) + '</b> (includes entries made directly in this app)' + (r.unmatchedAmt ? ' · ₹' + short(r.unmatchedAmt) + ' is on cases not in the current list' : '') + '</div>';
+    $('oiFull').checked = false;
   }).catch(function (e) { busy(false); toast(String(e)); });
 }
 

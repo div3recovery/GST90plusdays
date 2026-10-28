@@ -214,6 +214,7 @@
   </div>
   <div class="sec"><h4><i><svg class="ic"><use href="#i-refresh"/></svg></i>Import entries from old app</h4>
     <div class="hint" style="font-size:12.5px;line-height:1.55;margin-top:6px">Old app's Google Sheet → File → Download → <b>Microsoft Excel</b>. Choose that file here: only entries made after the last import come in (recoveries, actions, ledger) – no duplicates.</div>
+    <label class="oifull"><input type="checkbox" id="oiFull" onchange="oiFullChanged()"> <span><b>Re-check ALL old app entries</b> (from 22-10-2026) – use this once if recovery figures differ from the old app. Entries already brought in are not added again.</span></label>
     <input type="file" id="oiFile" accept=".xlsx,.xls,.xlsm" class="hide" onchange="oiFileChosen(this)">
     <div class="upf"><button class="btn sec2" style="margin:0" onclick="oiPick()"><svg class="ic"><use href="#i-sheet"/></svg> Choose Excel file</button><span id="oiName">No file chosen</span></div>
     <div id="oiPrev"></div>
