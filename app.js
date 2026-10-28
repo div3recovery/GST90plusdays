@@ -1,5 +1,5 @@
 /* STO Recovery App – Gandhinagar Division · version 2 · Developed by Mehul Ranavasiya */
-var APP_VER = '2.28';
+var APP_VER = '2.29';
 var API_URL = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) || '';
 var S = { meta: null, role: '', unit: '', sto: '', pin: '', by: '', d: null, stack: [], screen: '', head: null, cur: null,
           catF: '', ledF: 'todo', listMode: 'rec', listF: 'all', catSel: '', recMode: '', actType: '', fld: {} };
@@ -756,7 +756,7 @@ function renderReport() {
   $('dType').value = R.type;
   [].forEach.call($('dTabs').children, function (b) { b.classList.toggle('on', b.getAttribute('data-t') === R.tab); });
   $('dAsOn').innerHTML = esc((d.isCurrent ? 'As on ' + d.asOn : d.monthLabel + ' (closed month)') + ' · Target = ' + d.targetPct + '% of pending demand of Recoverable cases') +
-    ' · <button class="lnk" style="display:inline;width:auto;margin:0;padding:0 2px;font-size:12px" onclick="loadReport(R.data && !R.data.isCurrent ? R.data.month : \'\')">' + ic('refresh') + ' Refresh</button> · <span style="opacity:.7">App ' + APP_VER + '</span>';
+    ' · <button class="lnk" style="display:inline;width:auto;margin:0;padding:0 2px;font-size:12px" onclick="loadReport(R.data && !R.data.isCurrent ? R.data.month : \'\')">' + ic('refresh') + ' Refresh</button> · <span style="opacity:.7">App ' + APP_VER + '</span>' + (d.apiVer === APP_VER ? '' : ' · <b style="color:#A1182B">Script not updated (' + esc(d.apiVer || 'old') + ') – Deploy a new version of Code.gs</b>');
   var f = { ov: renderOverview, rec: renderRecovery, act: renderActions, led: renderLedgerTab, cat: renderCatTab }[R.tab];
   $('dBody').innerHTML = f();
 }
@@ -1429,7 +1429,12 @@ function oiFullChanged() {
   if (!OI.table) return; busy(true);
   api('previewOldImport', S.pin, OI.table, $('oiFull').checked).then(function (p) { busy(false); OI.prev = p; renderOiPrev(); }).catch(function (e) { busy(false); toast(String(e)); });
 }
+function verBan() {
+  return '<div class="ban stale" style="margin:10px 0 0"><b>' + ic('alert') + ' The Google Apps Script is still the OLD version</b>The app is ' + APP_VER + ' but the script is ' + esc(OI.prev.apiVer || 'older') + '. Nothing was changed. ' +
+    'In the Google Sheet: Extensions → Apps Script → paste the new Code.gs → Save → <b style="display:inline">Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy</b>. Then choose the file again.</div>';
+}
 function renderOiPrev() {
+  if (OI.prev && OI.prev.apiVer !== APP_VER) { $('oiPrev').innerHTML = verBan(); return; }
   var p = OI.prev, html = '<div class="upbox"><div class="uph">' + ic('refresh') + '<div><b>Old app entries after ' + esc(p.from) + '</b><span>' + (p.rows ? p.rows + (p.rows === 1 ? ' new entry' : ' new entries') + ' · up to ' + esc(p.to) : 'nothing new') + '</span></div></div>';
   var remBox = '';
   if (p.remDup || p.remOld) {
