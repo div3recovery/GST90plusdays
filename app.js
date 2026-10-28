@@ -1,4 +1,5 @@
 /* STO Recovery App – Gandhinagar Division · version 2 · Developed by Mehul Ranavasiya */
+var APP_VER = '2.28';
 var API_URL = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) || '';
 var S = { meta: null, role: '', unit: '', sto: '', pin: '', by: '', d: null, stack: [], screen: '', head: null, cur: null,
           catF: '', ledF: 'todo', listMode: 'rec', listF: 'all', catSel: '', recMode: '', actType: '', fld: {} };
@@ -720,14 +721,17 @@ function openDash() {
   R.tab = R.tab || 'ov';
   show('sDash', { mode: 'bar', ic: 1, t: 'Dashboard', s: (S.meta ? S.meta.division : '') + ' · public view' });
   var rep = null; try { rep = JSON.parse(recall('report') || 'null'); } catch (e) {}
-  if (rep && (!R.data || R.data.month === rep.month)) { R.data = rep; renderReport(); }
+  if (rep && (!R.data || R.data.month === rep.month)) { R.data = rep; R.stale = true; renderReport(); }
   loadReport(R.data && !R.data.isCurrent ? R.data.month : '');   // current month view always follows the latest month
 }
 function loadReport(month) {
-  if (!R.data) busy(true); else { $('dSync').textContent = 'Refreshing…'; $('dSync').classList.remove('hide'); }
+  if (!R.data) busy(true); else { $('dSync').className = 'ban info'; $('dSync').innerHTML = ic('refresh') + ' Getting the latest figures…'; }
   api('getReport', month || '').then(function (r) {
-    busy(false); $('dSync').classList.add('hide'); R.data = r; if (r.isCurrent) store('report', JSON.stringify(r)); renderReport();
-  }).catch(function (e) { busy(false); $('dSync').textContent = R.data ? 'Could not refresh – showing saved figures.' : String(e); $('dSync').classList.remove('hide'); });
+    busy(false); $('dSync').className = 'ban info hide'; R.data = r; R.stale = false; if (r.isCurrent) store('report', JSON.stringify(r)); renderReport();
+  }).catch(function (e) {
+    busy(false); $('dSync').className = 'ban stale';
+    $('dSync').innerHTML = R.data ? '<b>' + ic('alert') + ' Could not get the latest figures</b>Showing figures saved on this device ' + (R.data.asOn ? 'as on <b style="display:inline">' + esc(R.data.asOn) + '</b>' : '') + ' – they may be old. <button class="lnk" style="display:inline;width:auto;margin:0;padding:0 4px" onclick="loadReport(R.data && !R.data.isCurrent ? R.data.month : \'\')">Try again</button>' : esc(String(e));
+  });
 }
 function setTab(t) { R.tab = t; window.scrollTo(0, 0); renderReport(); }
 function setR(k, v) { R[k] = v; renderReport(); }
@@ -751,7 +755,8 @@ function renderReport() {
   $('dUnit').innerHTML = '<option value="all">All Units</option>' + units.map(function (u) { return '<option' + (R.unit === u ? ' selected' : '') + '>' + esc(u) + '</option>'; }).join('');
   $('dType').value = R.type;
   [].forEach.call($('dTabs').children, function (b) { b.classList.toggle('on', b.getAttribute('data-t') === R.tab); });
-  $('dAsOn').textContent = (d.isCurrent ? 'As on ' + d.asOn : d.monthLabel + ' (closed month)') + ' · Target = ' + d.targetPct + '% of pending demand of Recoverable cases';
+  $('dAsOn').innerHTML = esc((d.isCurrent ? 'As on ' + d.asOn : d.monthLabel + ' (closed month)') + ' · Target = ' + d.targetPct + '% of pending demand of Recoverable cases') +
+    ' · <button class="lnk" style="display:inline;width:auto;margin:0;padding:0 2px;font-size:12px" onclick="loadReport(R.data && !R.data.isCurrent ? R.data.month : \'\')">' + ic('refresh') + ' Refresh</button> · <span style="opacity:.7">App ' + APP_VER + '</span>';
   var f = { ov: renderOverview, rec: renderRecovery, act: renderActions, led: renderLedgerTab, cat: renderCatTab }[R.tab];
   $('dBody').innerHTML = f();
 }
@@ -1016,7 +1021,16 @@ window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault()
 window.addEventListener('appinstalled', function () { deferredPrompt = null; $('installBox').classList.add('hide'); toast('App installed ✓ – open it from your home screen'); });
 function installApp() { if (!deferredPrompt) return; deferredPrompt.prompt(); deferredPrompt.userChoice.then(function () { deferredPrompt = null; $('installBox').classList.add('hide'); }); }
 if (!isInstalled()) setTimeout(function () { if (!deferredPrompt) { $('installBox').classList.remove('hide'); $('installHint').classList.remove('hide'); } }, 2500);
-if ('serviceWorker' in navigator) window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
+      reg.update().catch(function () {});
+      document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') reg.update().catch(function () {}); });
+    }).catch(function () {});
+  });
+  var hadCtl = !!navigator.serviceWorker.controller, reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () { if (hadCtl && !reloaded) { reloaded = true; location.reload(); } hadCtl = true; });
+}
 if (window.history && history.pushState) {
   history.pushState({ app: 1 }, '');
   window.addEventListener('popstate', function () {
@@ -1417,25 +1431,38 @@ function oiFullChanged() {
 }
 function renderOiPrev() {
   var p = OI.prev, html = '<div class="upbox"><div class="uph">' + ic('refresh') + '<div><b>Old app entries after ' + esc(p.from) + '</b><span>' + (p.rows ? p.rows + (p.rows === 1 ? ' new entry' : ' new entries') + ' · up to ' + esc(p.to) : 'nothing new') + '</span></div></div>';
-  if (!p.rows && !p.full) { $('oiPrev').innerHTML = html + '<div class="upw">No entries after the last import. Nothing to do. (To re-check everything, tick "Re-check ALL old app entries" above.)</div></div>'; return; }
-  if (p.full) html += '<div class="upw"><b>Full re-check:</b> ' + p.rows + ' old app entries checked · <b>' + p.rec + ' recoveries (₹' + short(p.recAmt) + ') missing in this app</b> will be added' + (p.monthFixed ? ' · ' + p.monthFixed + ' earlier entries moved to the month they were reported' : '') + ' · ' + p.dup + ' already present. Old app total recovery: <b>₹' + short(p.oldTotal || 0) + '</b>.</div>';
+  var remBox = '';
+  if (p.remDup || p.remOld) {
+    remBox = '<div class="ban rmv" style="margin:10px 0 0"><b>' + ic('alert') + ' Recoveries that will NOT be counted: ' + (p.remDup + p.remOld) + ' (₹' + short(p.removedAmt) + ')</b>' +
+      (p.remDup ? '• <b style="display:inline">' + p.remDup + ' duplicate' + (p.remDup > 1 ? 's' : '') + '</b> – same case, same amount, same date (₹' + short(p.remDupAmt) + ')<br>' : '') +
+      (p.remOld ? '• <b style="display:inline">' + p.remOld + ' dated before 01-10-2026</b> (₹' + short(p.remOldAmt) + ')<br>' : '') +
+      '<table class="upt rmt"><tr><th>Date</th><th>Taxpayer · STO</th><th>Amount</th><th>Why</th></tr>' + p.removed.map(function (x) {
+        return '<tr><td>' + esc(x.d.slice(0, 5)) + (x.d ? '<small>' + esc(x.d.slice(6)) + '</small>' : '') + '</td><td style="text-align:left">' + esc(x.n) + '<br><small style="color:#5E6580">' + esc(shortU(x.u)) + ' · ' + esc(x.s) + '</small></td><td>₹' + short(x.a) + '</td><td>' + (/^Dup/.test(x.w) ? 'Duplicate' : 'Before Oct') + '</td></tr>';
+      }).join('') + '</table>' + ((p.remDup + p.remOld) > p.removed.length ? '<small>… full list in the sheet "Removed Recoveries" after applying.</small>' : '') + '</div>';
+  }
+  if (!p.rows && !p.full && !remBox) { $('oiPrev').innerHTML = html + '<div class="upw">No entries after the last import and nothing to clean. (To re-check everything, tick "Re-check ALL old app entries" above.)</div></div>'; return; }
+  html += remBox;
+  if (p.full) html += '<div class="upw"><b>Full re-check:</b> ' + p.rows + ' old app entries checked · <b>' + p.rec + ' recoveries (₹' + short(p.recAmt) + ') missing in this app</b> will be added' + (p.monthFixed ? ' · ' + p.monthFixed + ' earlier entries moved to the month they were reported' : '') + ' · ' + p.dup + ' already present. Old app total recovery from 01-10-2026, duplicates removed: <b>₹' + short(p.oldTotal || 0) + '</b>' + (p.oldTotalRaw > p.oldTotal ? ' (old app showed ₹' + short(p.oldTotalRaw) + ')' : '') + '.</div>';
   html += '<div class="upc"><span><b>' + p.rec + '</b>recoveries</span><span><b>₹' + short(p.recAmt) + '</b>recovered</span><span><b>' + p.act + '</b>actions</span><span><b>' + p.led + '</b>ledger</span></div>';
   if (p.dup) html += '<div class="upw">' + p.dup + ' entries are already in this app – they will be skipped.</div>';
   if (p.sample.length) html += '<table class="upt"><tr><th>Date</th><th>Taxpayer · STO</th><th>Amount</th></tr>' + p.sample.map(function (x) { return '<tr><td>' + esc(x.d.slice(0, 5)) + '</td><td style="text-align:left">' + esc(x.n) + '<br><small style="color:#5E6580">' + esc(shortU(x.u)) + ' · ' + esc(x.s) + ' · ' + esc(x.m) + '</small></td><td>₹' + short(x.a) + '</td></tr>'; }).join('') + '</table>';
   var st = Object.keys(p.stos).sort();
   if (st.length) html += '<div class="upw"><b>Entries by STO:</b> ' + st.map(function (k) { return esc(k.replace('Ghatak ', 'G-').replace(/ \([^)]*\)/, '')) + ' ' + p.stos[k]; }).join(' · ') + '</div>';
   if (p.unmatched.length) html += '<div class="ban" style="margin:10px 0 0"><b>' + p.unmatched.length + ' entr' + (p.unmatched.length > 1 ? 'ies' : 'y') + ' for cases not in the current list</b>' + p.unmatched.slice(0, 10).map(esc).join('<br>') + (p.unmatched.length > 10 ? '<br>…' : '') + '<br>They are kept in the sheet "Old App Import".</div>';
-  html += '<button class="btn" onclick="oiApply()">' + ic('check') + (p.full ? ' Re-check &amp; fix' : ' Import ' + p.rows + ' entries') + '</button></div>';
+  html += '<button class="btn" onclick="oiApply()">' + ic('check') + (p.full ? ' Re-check &amp; fix' : p.rows ? ' Import ' + p.rows + ' entries' + (remBox ? ' &amp; remove ' + (p.remDup + p.remOld) : '') : ' Remove ' + (p.remDup + p.remOld) + ' entries') + '</button></div>';
   $('oiPrev').innerHTML = html;
 }
 function oiApply() {
-  if (!confirm(OI.prev.full ? 'Re-check all old app entries and add the missing ones?' : 'Import ' + OI.prev.rows + ' entries of the old app into this app?')) return;
+  var P = OI.prev, rm = (P.remDup || 0) + (P.remOld || 0);
+  if (!confirm((P.full ? 'Re-check all old app entries and add the missing ones?' : P.rows ? 'Import ' + P.rows + ' entries of the old app into this app?' : 'Clean the old app recoveries?') +
+    (rm ? '\n\n' + rm + ' recoveries (₹' + short(P.removedAmt) + ') will not be counted: ' + (P.remDup ? P.remDup + ' duplicates' : '') + (P.remDup && P.remOld ? ', ' : '') + (P.remOld ? P.remOld + ' dated before 01-10-2026' : '') + '.' : ''))) return;
   busy(true);
   api('applyOldImport', S.pin, OI.table, !!OI.prev.full).then(function (r) {
     busy(false); OI = {}; $('oiName').textContent = 'No file chosen';
     try { localStorage.removeItem('rec2_report'); } catch (e) {}
     $('oiPrev').innerHTML = '<div class="ban ok" style="margin:10px 0 0"><b>' + ic('check') + ' Imported</b>' + r.rec + (r.rec === 1 ? ' recovery' : ' recoveries') + ' (₹' + short(r.recAmt) + ') · ' + clN(r.act, 'action') + ' · ' + r.led + (r.led === 1 ? ' ledger entry' : ' ledger entries') + (r.unmatched.length ? ' · ' + r.unmatched.length + ' not found (see sheet "Old App Import")' : '') + (r.monthFixed ? ' · month corrected for ' + r.monthFixed + ' earlier entries' : '') +
-      '<br>Old app total recovery <b>₹' + short(r.oldTotal || 0) + '</b> · this app <b>₹' + short(r.appTotal || 0) + '</b> (includes entries made directly in this app)' + (r.unmatchedAmt ? ' · ₹' + short(r.unmatchedAmt) + ' is on cases not in the current list' : '') + '</div>';
+      ((r.remDup || r.remOld) ? '<br><b style="display:inline">Removed: ' + (r.remDup ? r.remDup + ' duplicate' + (r.remDup > 1 ? 's' : '') + ' (₹' + short(r.remDupAmt) + ')' : '') + (r.remDup && r.remOld ? ' · ' : '') + (r.remOld ? r.remOld + ' dated before 01-10-2026 (₹' + short(r.remOldAmt) + ')' : '') + '</b> – listed in the sheet "Removed Recoveries"' : '') +
+      '<br>Old app recovery from 01-10-2026, duplicates removed <b>₹' + short(r.oldTotal || 0) + '</b> · this app <b>₹' + short(r.appTotal || 0) + '</b> (includes entries made directly in this app)' + (r.unmatchedAmt ? ' · ₹' + short(r.unmatchedAmt) + ' is on cases not in the current list' : '') + '</div>';
     $('oiFull').checked = false;
   }).catch(function (e) { busy(false); toast(String(e)); });
 }

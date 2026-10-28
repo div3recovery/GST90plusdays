@@ -594,3 +594,5 @@ input:focus,select:focus,textarea:focus{border-color:var(--ind);box-shadow:0 0 0
 .rks button.on{background:#fff;color:var(--ind);box-shadow:0 1px 3px rgba(11,36,112,.15)}
 .rr .p{width:auto;min-width:62px;line-height:1.1}.rr .p small{display:block;font-size:10px;font-weight:500;color:#999}
 .rkbar{display:flex;align-items:center;gap:8px;margin:10px 14px 0;font-size:12px;color:#77736A}
+.ban.stale{background:#FBE1E3;border-color:#F3C3C8;color:#7A1A26}.ban.stale b{color:#A1182B}.ban.stale .ic{width:15px;height:15px;vertical-align:-2px}
+.ban.rmv{background:#FFF4E5;border-color:#F2C98A}.rmt{margin-top:8px;background:#fff}.rmt td small{display:block;font-size:10px;color:#888}
