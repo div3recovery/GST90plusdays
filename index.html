@@ -100,7 +100,7 @@
   <div class="sel"><select id="clUnit" onchange="clSet('unit',this.value)"></select><select id="clSto" onchange="clSet('sto',this.value)"></select><select id="clType" onchange="clSet('type',this.value)"><option value="all">All cases</option><option value="A">Active</option><option value="C">Cancelled</option></select></div>
   <div class="rtabs" id="clTabs">
     <button data-t="rec" onclick="clSet('tab','rec')"><svg class="ic"><use href="#i-cash"/></svg> Recovery</button><button data-t="act" onclick="clSet('tab','act')"><svg class="ic"><use href="#i-gavel"/></svg> Actions</button>
-    <button data-t="led" onclick="clSet('tab','led')"><svg class="ic"><use href="#i-ledger"/></svg> Ledger</button><button data-t="cat" onclick="clSet('tab','cat')"><svg class="ic"><use href="#i-folder"/></svg> Categories</button>
+    <button data-t="led" onclick="clSet('tab','led')"><svg class="ic"><use href="#i-ledger"/></svg> Ledger</button><button data-t="cat" onclick="clSet('tab','cat')"><svg class="ic"><use href="#i-folder"/></svg> Categories</button><button data-t="cor" onclick="clSet('tab','cor')"><svg class="ic"><use href="#i-edit"/></svg> Corrections</button>
   </div>
   <div class="pills cpills" id="clPills"></div>
   <div class="srch" id="clSrch"><input id="clQ" type="search" placeholder="Search taxpayer, GSTIN or Demand ID" oninput="CL.q=this.value;CL.lim=50;renderCL()"></div>
@@ -118,6 +118,7 @@
 <div id="sHome" class="v hide">
   <div class="who"><span class="ib sm"><svg class="ic"><use href="#i-user"/></svg></span><div style="flex:1;min-width:0"><span>Logged in as</span><b id="whoName"></b></div><button onclick="logout()"><svg class="ic"><use href="#i-logout"/></svg> Change</button></div>
   <div id="syncHome" class="ban info hide"></div>
+  <div id="todayW" class="tw hide"></div>
   <div id="myStand" class="mys hide" onclick="openDash()"></div>
   <div class="lux-list">
     <button class="lux sm" onclick="openCat()"><span class="ib"><svg class="ic"><use href="#i-folder"/></svg></span><span class="lt"><span class="lh"><b>Case Categories</b><span class="pc" id="tCat"></span></span><small id="tCatS">Decide / confirm categories</small></span><span class="chev">&#8250;</span></button>
@@ -162,16 +163,20 @@
 <div id="sList" class="v hide">
   <div class="tyw"><div class="seg tyseg" id="ty_sList"></div></div>
   <div class="pills" id="listPills"></div>
+  <div id="listExtra"></div>
   <div class="srch"><input id="qList" type="search" placeholder="Search taxpayer, GSTIN or Demand ID" oninput="renderList()"></div>
   <div class="list" id="listRows"></div>
 </div>
+
+<!-- CORRECTION OF AN ENTRY -->
+<div id="sCorr" class="v hide padbar mk"></div>
 
 <!-- RECOVERY FORM -->
 <div id="sRec" class="v hide padbar">
   <div class="cbox" id="recBox"></div>
   <div class="sec"><h4><i><svg class="ic"><use href="#i-rupee"/></svg></i>Amount recovered now</h4>
     <input id="rAmt" type="text" inputmode="numeric" placeholder="0" style="font:700 22px Inter,sans-serif;margin-top:8px" oninput="recPreview()">
-    <label for="rDate">Date of recovery</label><input id="rDate" type="date"></div>
+    <label for="rDate">Date of recovery</label><input id="rDate" type="date" oninput="recDateChk()" onchange="recDateChk()"><div id="rDateErr"></div></div>
   <div class="sec"><h4><i><svg class="ic"><use href="#i-cash"/></svg></i>How was it recovered?</h4><div class="chips" id="rModes"></div>
     <label for="rRef">DRC-03 / Challan / Reference no. (optional)</label><input id="rRef" type="text" placeholder="e.g. AD2410260012345">
     <label for="rRem">Remarks (optional)</label><input id="rRem" type="text"></div>
@@ -220,6 +225,7 @@
     <div id="oiPrev"></div>
   </div>
   <div id="admLockBox"></div>
+  <div class="sec" id="admArch"></div>
   <div class="sec"><h4><i><svg class="ic"><use href="#i-download"/></svg></i>Downloads</h4>
     <div class="opt">
       <button class="op" onclick="dlLists()"><svg class="ic"><use href="#i-sheet"/></svg> Category lists – Excel (Summary + one sheet per category)</button>

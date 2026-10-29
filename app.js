@@ -1,5 +1,5 @@
 /* STO Recovery App – Gandhinagar Division · version 2 · Developed by Mehul Ranavasiya */
-var APP_VER = '2.29';
+var APP_VER = '2.32', API_NEED = '2.31';   // API_NEED = version of Code.gs this app needs
 var API_URL = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) || '';
 var S = { meta: null, role: '', unit: '', sto: '', pin: '', by: '', d: null, stack: [], screen: '', head: null, cur: null,
           catF: '', ledF: 'todo', listMode: 'rec', listF: 'all', catSel: '', recMode: '', actType: '', fld: {} };
@@ -40,7 +40,7 @@ function api(fn) {
 }
 
 /* ---------------- navigation ---------------- */
-var VIEWS = ['sStart', 'sLogin', 'sRole', 'sHome', 'sCat', 'sCatForm', 'sLedger', 'sList', 'sRec', 'sAct', 'sCase', 'sAdmin', 'sDash', 'sOff', 'sRev', 'sLists'];
+var VIEWS = ['sStart', 'sLogin', 'sRole', 'sHome', 'sCat', 'sCatForm', 'sLedger', 'sList', 'sRec', 'sAct', 'sCase', 'sAdmin', 'sDash', 'sOff', 'sRev', 'sLists', 'sCorr'];
 var REFRESH = {
   sHome: function () { renderHome(); }, sCat: function () { renderCat(); }, sLedger: function () { renderLedger(); },
   sList: function () { renderList(); }, sCase: function () { if (S.cur) openCase(S.cur.demandId, true); }, sDash: function () { renderReport(); }
@@ -198,8 +198,29 @@ function renderStanding() {
          '<div class="msL"><span>' + esc(shortU(S.unit)) + ' average</span><b>' + uAvg.toFixed(1) + '%</b><em>Rank ' + ur + ' of ' + U.length + ' in Unit</em></div><div class="bar"><i style="width:' + w(uAvg) + '%"></i></div>') +
     '</div></div><div class="msG">' + gap + '</div>';
 }
+function renderToday() {
+  var el = $('todayW'); if (!S.d || !S.d.cases) { el.classList.add('hide'); return; }
+  var w = work(), F = (S.meta && S.meta.freshDays) || 7, SD = S.d.setoffDays || 3, today = S.d.today, cut3 = sinceCut3();
+  var od = w.filter(function (c) { return c.ledgerGroup === 'A' && c.adjSince && daysAgo(c.adjSince) >= SD; }), odAmt = od.reduce(function (a, c) { return a + (Number(c.adjustable) || 0); }, 0);
+  var st = w.filter(function (c) { return !c.ledgerOn || daysAgo(c.ledgerOn) >= F; });
+  var na = w.filter(function (c) { var l = lastAct(c); return !l || l < cut3; }).sort(function (a, b) { return b.balance - a.balance; });
+  var pc = 0; S.d.cases.forEach(function (c) { if (c.catStatus === 'decide' || c.catStatus === 'confirm') pc++; });
+  var items = [
+    { k: 'r', t: 'Set off adjustable amount', s: od.length ? od.length + ' case' + (od.length > 1 ? 's' : '') + ' · ₹' + short(odAmt) + ' adjustable for ' + SD + '+ days' : 'Nothing waiting for set-off', n: od.length, go: "S.ty='all';S.ledF='adj';openLedger()" },
+    { k: 'a', t: 'Check ledgers', s: st.length ? st.length + ' Recoverable case' + (st.length > 1 ? 's' : '') + ' not checked in ' + F + ' days' : 'All ledgers checked in the last ' + F + ' days', n: st.length, go: "S.ty='all';S.ledF='stale';openLedger()" },
+    { k: 'y', t: 'No action for 3 months', s: na.length ? na.length + ' case' + (na.length > 1 ? 's' : '') + ' · biggest ₹' + short(na[0].balance) + ' – ' + esc(na[0].name) : 'Every case has an action in the last 3 months', n: na.length, go: "S.ty='all';S.since=3;openList('act');S.listF='since';renderList()" }];
+  if (!S.d.locked) items.push({ k: 'g', t: 'Confirm categories', s: pc ? pc + ' case' + (pc > 1 ? 's' : '') + ' to confirm / decide' : 'All ' + S.d.cases.length + ' cases done', n: pc, go: 'openCat()' });
+  var done = items.filter(function (x) { return !x.n; }).length;
+  el.classList.remove('hide');
+  el.innerHTML = '<div class="twH"><span class="ib sm" style="flex:none">' + ic('check') + '</span><div><b>Today\'s work</b><span>' + esc(new Date(today).toLocaleDateString('en-GB', { weekday: 'long' })) + ', ' + dmy(today) + '</span></div><div class="ring"><b>' + done + '</b> of ' + items.length + ' done</div></div>' +
+    '<div class="twBar"><i style="width:' + Math.round(done * 100 / items.length) + '%"></i></div>' +
+    items.map(function (x) { return '<div class="twI' + (x.n ? '' : ' done') + '"' + (x.n ? ' onclick="' + x.go + '"' : '') + '><span class="dt ' + (x.n ? x.k : 'g') + '"></span><div class="tx"><b>' + x.t + '</b><small>' + x.s + '</small></div><span class="n">' + (x.n ? x.n : '✓') + '</span>' + (x.n ? '<span class="ch">›</span>' : '') + '</div>'; }).join('') +
+    '<div class="twF">' + (done === items.length ? '✓ All done for today – well done!' : 'Tap a line to open those cases. The list updates as you work.') + '</div>';
+}
+function sinceCut3() { var t = new Date(S.d.today || Date.now()); t.setMonth(t.getMonth() - 3); return t.toISOString().slice(0, 10); }
 function renderHome() {
   $('whoName').textContent = S.by + ' · ' + S.unit + ' · ' + S.sto;
+  renderToday();
   loadStanding();
   var cs = S.d.cases, w = work(), dec = 0, con = 0;
   cs.forEach(function (c) { if (c.catStatus === 'decide') dec++; else if (c.catStatus === 'confirm') con++; });
@@ -379,13 +400,15 @@ function renderLedger() {
   var w = work().filter(tyOk), done = w.filter(checkedToday).length, adj = w.filter(function (c) { return c.ledgerGroup === 'A'; }).length;
   $('ledPrg').textContent = done + ' of ' + w.length + ' checked today';
   $('ledBar').style.width = (w.length ? Math.round(done * 100 / w.length) : 0) + '%';
-  var pills = [['todo', 'To check ' + (w.length - done)], ['done', 'Checked today ' + done], ['adj', 'Adjustable ' + adj], ['all', 'All ' + w.length]];
+  var F7 = (S.meta && S.meta.freshDays) || 7, stale = w.filter(function (c) { return !c.ledgerOn || daysAgo(c.ledgerOn) >= F7; }).length;
+  var pills = [['todo', 'To check ' + (w.length - done)], ['stale', 'Not checked ' + F7 + '+ days ' + stale], ['done', 'Checked today ' + done], ['adj', 'Adjustable ' + adj], ['all', 'All ' + w.length]];
   $('ledPills').innerHTML = pills.map(function (p) { return '<button class="pill' + (S.ledF === p[0] ? ' on' : '') + '" onclick="S.ledF=\'' + p[0] + '\';renderLedger()">' + p[1] + '</button>'; }).join('');
   var q = $('qLed').value.trim().toLowerCase();
   var list = w.filter(function (c) {
     if (S.ledF === 'todo' && checkedToday(c)) return false;
     if (S.ledF === 'done' && !checkedToday(c)) return false;
     if (S.ledF === 'adj' && c.ledgerGroup !== 'A') return false;
+    if (S.ledF === 'stale' && c.ledgerOn && daysAgo(c.ledgerOn) < F7) return false;
     if (q && (c.name + ' ' + c.gstin).toLowerCase().indexOf(q) < 0) return false;
     return true;
   }).sort(function (a, b) { return b.balance - a.balance; });
@@ -425,28 +448,36 @@ function openList(mode) {
   show('sList', { mode: 'bar', t: mode === 'rec' ? 'Recovery Made' : 'Actions Taken', s: S.unit + ' · ' + S.sto + ' · ' + S.d.monthLabel });
   renderList();
 }
+function lastAct(c) { var a = String(c.stepDate || '').slice(0, 10), b = String(c.spotDate || '').slice(0, 10); return a > b ? a : b; }
+function sinceCut() { var t = new Date(S.d.today || Date.now()); t.setMonth(t.getMonth() - (S.since || 3)); return t.toISOString().slice(0, 10); }
 function renderList() {
-  var mode = S.listMode, base = mode === 'unit' ? S.d.cases : work(), pills;
-  tySeg('sList', base, 'renderList', null); var all = base.filter(tyOk);
+  var mode = S.listMode, hist = mode === 'act' && S.listF === 'hist', base = (mode === 'unit' || hist) ? S.d.cases : work(), pills;
+  tySeg('sList', base, 'renderList', null); var all = base.filter(tyOk), cut = sinceCut();
   if (mode === 'rec') pills = [['all', 'All ' + all.length], ['done', 'Recovered this month ' + all.filter(function (c) { return c.recovered > 0; }).length], ['none', 'No recovery yet']];
-  else if (mode === 'act') pills = [['all', 'All ' + all.length], ['none', 'No action this month ' + all.filter(function (c) { return !c.actsMonth; }).length], ['done', 'With actions']];
+  else if (mode === 'act') { var W0 = work().filter(tyOk);
+    pills = [['all', 'All ' + W0.length], ['none', 'No action this month ' + W0.filter(function (c) { return !c.actsMonth; }).length], ['done', 'With actions'],
+      ['since', 'No action since ' + (S.since || 3) + ' months ' + W0.filter(function (c) { var l = lastAct(c); return !l || l < cut; }).length], ['hist', ic('clock') + ' History']]; }
   else {
     var stos = []; all.forEach(function (c) { if (stos.indexOf(c.sto) < 0) stos.push(c.sto); }); stos.sort();
     pills = [['all', 'All STOs ' + all.length]].concat(stos.map(function (s) { return [s, s]; }));
   }
   if (!pills.some(function (p) { return p[0] === S.listF; })) S.listF = 'all';
-  $('listPills').innerHTML = pills.map(function (p) { return '<button class="pill' + (S.listF === p[0] ? ' on' : '') + '" onclick="S.listF=\'' + esc(p[0]) + '\';renderList()">' + esc(p[1]) + '</button>'; }).join('');
+  $('listPills').innerHTML = pills.map(function (p) { return '<button class="pill' + (S.listF === p[0] ? ' on' : '') + '" onclick="S.listF=\'' + esc(p[0]) + '\';renderList()">' + (p[0] === 'hist' ? p[1] : esc(p[1])) + '</button>'; }).join('');
+  $('listExtra').innerHTML = mode === 'act' && S.listF === 'since' ? '<div class="since">' + ic('clock') + ' No action since <select onchange="S.since=Number(this.value);renderList()">' + [3, 6, 12].map(function (n) { return '<option value="' + n + '"' + ((S.since || 3) === n ? ' selected' : '') + '>' + n + ' months</option>'; }).join('') + '</select><span>(before ' + dmy(cut) + ')</span></div>'
+    : hist ? '<div class="since">' + ic('clock') + ' All your cases · tap a case to see its full history</div>' : '';
   var q = $('qList').value.trim().toLowerCase();
   var list = all.filter(function (c) {
     if (q && (c.name + ' ' + c.gstin + ' ' + c.demandId).toLowerCase().indexOf(q) < 0) return false;
     if (mode === 'rec') { if (S.listF === 'done' && !(c.recovered > 0)) return false; if (S.listF === 'none' && c.recovered > 0) return false; }
-    else if (mode === 'act') { if (S.listF === 'done' && !c.actsMonth) return false; if (S.listF === 'none' && c.actsMonth) return false; }
+    else if (mode === 'act') { if (S.listF === 'done' && !c.actsMonth) return false; if (S.listF === 'none' && c.actsMonth) return false; if (S.listF === 'since') { var l = lastAct(c); if (l && l >= cut) return false; } }
     else if (S.listF !== 'all' && c.sto !== S.listF) return false;
     return true;
   }).sort(function (a, b) { return b.balance - a.balance; });
   $('listRows').innerHTML = list.length ? list.map(function (c) {
     var id = esc(c.demandId), meta, cls, fn;
     if (mode === 'rec') { cls = c.recovered > 0 ? 'g' : ''; meta = c.recovered > 0 ? '<span>' + ic('cash') + ' Recovered &#8377;' + short(c.recovered) + ' this month' + (c.recMode ? ' · ' + esc(c.recMode) : '') + '</span>' : '<span>No recovery this month</span>'; fn = 'openRec'; }
+    else if (hist) { var la = lastAct(c); cls = ''; meta = catChip(c.cat || '') + '<span>' + ic('clock') + ' ' + (la ? 'Last action ' + dmy(la) : 'No action recorded') + '</span>'; fn = 'openCase'; }
+    else if (mode === 'act' && S.listF === 'since') { var l2 = lastAct(c); cls = 'r'; meta = '<span>' + ic('alert') + ' ' + (l2 ? 'Last action ' + dmy(l2) + ' · ' + daysAgo(l2) + ' days ago' : 'No action ever recorded') + '</span>'; fn = 'openAct'; }
     else if (mode === 'act') {
       cls = c.actsMonth ? 'g' : '';
       var last = c.stepDate || c.spotDate ? ((c.stepDate >= c.spotDate ? stepShort(c.step) + ' · ' + dmy(c.stepDate).slice(0, 5) : 'Spot visit · ' + dmy(c.spotDate).slice(0, 5))) : '';
@@ -469,19 +500,26 @@ function fyOf(c) {
   var f = t.match(/(\d{4})\s*-\s*(\d{2,4})/); if (f) return f[1] + '-' + f[2].slice(-2);
   return '';
 }
+function daysPend(c) {
+  var n = Number(c.daysPending);
+  if (c.daysPending !== '' && c.daysPending != null && n > 0) return { n: n, on: c.daysAsOn ? dmy(c.daysAsOn) : '' };
+  if (c.demandDate) { var t = new Date(S.d && S.d.today ? S.d.today : Date.now()), d0 = new Date(String(c.demandDate).slice(0, 10)); if (!isNaN(d0)) return { n: Math.round((t - d0) / 864e5), on: 'today' }; }
+  return null;
+}
+function daysTxt(c, long) { var p = daysPend(c); return p ? inr(p.n) + ' days' + (long && p.on ? ' <small style="color:#888">(as on ' + esc(p.on) + ')</small>' : '') : '–'; }
 function idLine(c) {
   var fy = fyOf(c);
-  return '<div class="idl"><b>' + esc(c.demandId) + '</b>' + (c.demandDate ? ' · ' + dmy(c.demandDate) : '') + (fy ? ' · F.Y. ' + esc(fy) : '') + '</div>';
+  return '<div class="idl"><b>' + esc(c.demandId) + '</b>' + (c.section ? ' · Sec ' + esc(c.section) : '') + (fy ? ' · F.Y. ' + esc(fy) : '') + '</div>';
 }
 function caseBox(c) {
   var fy = fyOf(c), rows = [
     ['Demand ID', '<b class="mono">' + esc(c.demandId) + '</b>'], ['Order date', c.demandDate ? dmy(c.demandDate) : '–'],
     ['Tax period', esc(c.taxPeriod || '–')], ['Year (F.Y.)', esc(fy || '–')],
-    ['Section', esc(c.section || '–')], ['Case type', esc(c.type || '–')],
+    ['Section', esc(c.section || '–')], ['Pending for', '<b style="color:#A1182B">' + daysTxt(c) + '</b>'], ['Case type', esc(c.type || '–')], ['', ''],
     ['Original demand', '&#8377;' + inr(c.original)], ['Pending demand', '&#8377;' + inr(c.pending)]];
   if (c.tradeName && c.tradeName.toUpperCase() !== String(c.name).toUpperCase()) rows.unshift(['Trade name', esc(c.tradeName)]);
   return '<div class="cbh">' + ic('doc') + ' Check that this is the correct case</div><div class="cbg">' +
-    rows.map(function (r) { return '<div' + (r[0] === 'Trade name' ? ' class="w"' : '') + '><span>' + r[0] + '</span>' + r[1] + '</div>'; }).join('') + '</div>';
+    rows.filter(function (r) { return r[0]; }).map(function (r) { return '<div' + (r[0] === 'Trade name' ? ' class="w"' : '') + '><span>' + r[0] + '</span>' + r[1] + '</div>'; }).join('') + '</div>';
 }
 function caseKpis(c) {
   return '<div class="kpi"><span>Balance pending</span><b>&#8377;' + inr(c.balance) + '</b></div>' +
@@ -490,16 +528,42 @@ function caseKpis(c) {
 function openRec(id) {
   var c = caseById(id); if (!c) return; S.cur = c; S.recMode = '';
   show('sRec', { mode: 'bar', t: c.name, s: c.gstin, k: '<div class="kpi"><span>Balance pending</span><b>&#8377;' + inr(c.balance) + '</b></div><div class="kpi"><span>Recovered this month</span><b>&#8377;' + inr(c.recovered) + '</b></div>' });
-  ['rAmt', 'rRef', 'rRem'].forEach(function (k) { $(k).value = ''; }); $('rDate').value = todayIso(); $('rDate').max = todayIso(); $('rErr').textContent = '';
+  ['rAmt', 'rRef', 'rRem'].forEach(function (k) { $(k).value = ''; }); $('rDate').value = todayIso(); $('rDate').max = todayIso(); $('rDate').min = monStart(); $('rErr').textContent = ''; recDateChk();
   $('recBox').innerHTML = caseBox(c);
   renderModes(); recPreview();
   $('rHist').innerHTML = '<h4><i>' + ic('clock') + '</i>Recoveries recorded</h4><div class="hint">Loading…</div>';
   api('getHistory', S.unit, S.sto, S.pin, id, 'sto').then(function (h) {
-    $('rHist').innerHTML = '<h4><i>' + ic('clock') + '</i>Recoveries recorded</h4>' + (h.recoveries.length ? h.recoveries.map(function (r) {
-      return '<div class="ev"><i>' + ic('cash') + '</i><div><b>&#8377;' + inr(r.amount) + ' · ' + esc(r.mode) + '</b><small>' + dmy(r.date) + (r.ref ? ' · ' + esc(r.ref) : '') + (r.remarks ? ' · ' + esc(r.remarks) : '') + ' · ' + esc(r.by) + '</small></div></div>';
-    }).join('') : '<div class="hint">No recovery recorded yet.</div>');
+    S.hist = h; var cm = corrMap(h), dl = delItems(h, 'Recovery');
+    $('rHist').innerHTML = '<h4><i>' + ic('clock') + '</i>Recoveries recorded</h4>' + (h.recoveries.length || dl.length ? h.recoveries.map(function (r) { return recEv(r, cm); }).join('') + dl.map(function (x) { return x.html; }).join('') : '<div class="hint">No recovery recorded yet.</div>');
   }).catch(function () { $('rHist').innerHTML = '<h4><i>' + ic('clock') + '</i>Recoveries recorded</h4><div class="hint">History not available offline.</div>'; });
 }
+function monStart() { return (S.d && S.d.month ? S.d.month : todayIso().slice(0, 7)) + '-01'; }
+function recDateChk() {
+  var v = $('rDate').value, ms = monStart(), bad = v && v < ms, btn = document.querySelector('#sRec .savebar .btn:last-child');
+  $('rDate').classList.toggle('bad', !!bad); if (btn) btn.classList.toggle('dis', !!bad);
+  $('rDateErr').innerHTML = bad ? '<div class="derr">' + ic('alert') + '<div><b>Date is before ' + dmy(ms) + '</b>Only recoveries made in ' + esc(S.d.monthLabel) + ' (' + dmy(ms) + ' to today) can be entered.</div></div>' : '';
+  return !bad;
+}
+/* ---- "Same entry already recorded?" panel ---- */
+function dupSheet(o) {
+  var ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'dupOv';
+  ov.innerHTML = '<div class="sheet"><div class="grab"></div><div class="hd"><span class="ib">' + ic('alert') + '</span><div><b>' + esc(o.title) + '</b><span>' + esc(o.sub) + '</span></div></div>' +
+    '<div class="cmpb"><div class="r"><div></div><div>Already recorded</div><div>You are entering</div></div>' + o.rows.map(function (r) {
+      return '<div class="r"><div>' + esc(r[0]) + '</div><div' + (r[3] ? ' class="same"' : '') + '>' + r[1] + '</div><div' + (r[3] ? ' class="same"' : '') + '>' + r[2] + '</div></div>'; }).join('') + '</div>' +
+    '<label class="tick" id="dupTick"><input type="checkbox" id="dupChk" onchange="dupTickChk()"><span>' + o.tick + '</span></label>' +
+    (o.needRef ? '<label style="margin-top:10px">Challan / reference no. of this payment (compulsory)</label><input id="dupRef" value="' + esc(o.ref || '') + '" placeholder="e.g. AD2411260019876">' : '') +
+    '<div id="dupErr" class="err" style="margin-top:6px"></div><div class="two"><button class="btn sec2" onclick="dupClose()">No – it is the same</button><button class="btn dis" id="dupYes">Yes – save as separate</button></div></div>';
+  document.body.appendChild(ov);
+  $('dupYes').onclick = function () {
+    if (!$('dupChk').checked) return;
+    var ref = o.needRef ? $('dupRef').value.trim() : '';
+    if (o.needRef && !ref) { $('dupErr').textContent = 'Enter the challan / reference no. of this payment.'; return; }
+    dupClose(); o.yes(ref);
+  };
+  ov.addEventListener('click', function (e) { if (e.target === ov) dupClose(); });
+}
+function dupTickChk() { $('dupYes').classList.toggle('dis', !$('dupChk').checked); $('dupTick').classList.toggle('on', $('dupChk').checked); }
+function dupClose() { var o = $('dupOv'); if (o) o.remove(); }
 function renderModes() { $('rModes').innerHTML = S.meta.recoveryModes.map(function (m) { return '<button class="chip' + (S.recMode === m ? ' on' : '') + '" onclick="S.recMode=\'' + esc(m) + '\';renderModes()">' + esc(m) + '</button>'; }).join(''); }
 function recPreview() {
   var a = Number(numVal('rAmt')) || 0, c = S.cur;
@@ -511,11 +575,71 @@ function saveRec() {
   if (!$('rDate').value) { e.textContent = 'Please enter the date of recovery.'; return; }
   if (!S.recMode) { e.textContent = 'Please select how it was recovered.'; return; }
   if (S.recMode === 'Other' && !$('rRem').value.trim()) { e.textContent = 'Please describe the mode in Remarks.'; return; }
+  if (!recDateChk()) return;
   if (Number(a) > S.cur.balance && !confirm('Amount is more than balance pending (₹' + inr(S.cur.balance) + '). Save anyway?')) return;
+  var send = function (dup, ref) {
+    busy(true);
+    api('saveRecovery', { unit: S.unit, sto: S.sto, pin: S.pin, by: S.by, demandId: S.cur.demandId, amount: a, date: $('rDate').value, mode: S.recMode, ref: dup ? ref : $('rRef').value, remarks: $('rRem').value, confirmDup: !!dup })
+      .then(function (n) { busy(false); replaceCase(n); toast('Recovery saved ✓'); goBack(); })
+      .catch(function (err) {
+        busy(false); err = String(err);
+        if (err.indexOf('DUP|') !== 0) { e.textContent = err; return; }
+        var p = JSON.parse(err.slice(4));
+        dupSheet({ title: 'Same recovery already recorded?', sub: 'This case already has a recovery with the same amount and date.', needRef: true, ref: $('rRef').value,
+          tick: 'This is a <b>separate payment</b>, not the same one recorded earlier.',
+          rows: [['Amount', '₹' + inr(p.amount), '₹' + inr(a), true], ['Date', esc(p.date), dmy($('rDate').value), true], ['Mode', esc(p.mode), esc(S.recMode)],
+            ['Reference', esc(p.ref || '–'), esc($('rRef').value || '–')], ['Entered', esc(p.at) + '<br>' + esc(p.by), 'now']],
+          yes: function (ref) { send(true, ref); } });
+      });
+  };
+  send(false);
+}
+
+/* ---------------- STO corrects own entry ---------------- */
+var CORR = {};
+function openCorr(kind, id) {
+  var h = S.hist || {}, x = (kind === 'rec' ? h.recoveries : h.actions || []).find(function (y) { return y.id === id; }); if (!x) { toast('Entry not found – please refresh.'); return; }
+  CORR = { kind: kind, x: x, change: 'edit', mode: x.mode, action: x.action };
+  show('sCorr', { mode: 'bar', t: 'Correct an entry', s: S.cur.name + ' · ' + S.cur.demandId });
+  renderCorr();
+}
+function renderCorr() {
+  var x = CORR.x, R = CORR.kind === 'rec', ed = CORR.change === 'edit';
+  var h = '<div class="sec"><h4><i>' + ic(R ? 'cash' : 'gavel') + '</i>Entry to correct</h4><div class="orig"><b>' + (R ? 'Recovery ₹' + inr(x.amount) + '</b> · ' + esc(x.mode) : esc(stepShort(x.action)) + '</b>') +
+    '<small>' + (R ? 'Recovery' : 'Action') + ' date ' + dmy(x.date) + (x.ref ? ' · ' + esc(x.ref) : '') + ' · entered by ' + esc(x.by) + '</small></div></div>' +
+    '<div class="sec"><h4><i>' + ic('edit') + '</i>What is wrong?</h4><div class="kind"><button class="' + (ed ? 'on' : '') + '" onclick="CORR.change=\'edit\';renderCorr()">' + (R ? 'Wrong amount / date / mode' : 'Wrong action / date') + '<small>Enter the correct details</small></button>' +
+    '<button class="' + (ed ? '' : 'on') + '" onclick="CORR.change=\'delete\';renderCorr()">Delete this entry<small>Wrong case or entered twice</small></button></div>';
+  if (ed && R) h += '<div class="row2" style="margin-top:6px"><div><label>Correct amount</label><input id="cAmt" inputmode="numeric" value="' + inr(x.amount) + '" oninput="corrCmp()"></div><div><label>Recovery date</label><input id="cDate" type="date" value="' + esc(x.date) + '" min="' + monStart() + '" max="' + todayIso() + '" oninput="corrCmp()"></div></div>' +
+    '<label>Mode</label><div class="chips" id="cModes">' + S.meta.recoveryModes.map(function (m, i) { return '<button class="chip' + (CORR.mode === m ? ' on' : '') + '" onclick="CORR.mode=S.meta.recoveryModes[' + i + '];renderCorr()">' + esc(m) + '</button>'; }).join('') + '</div>' +
+    '<label>DRC-03 / Challan / Reference no.</label><input id="cRef" value="' + esc(x.ref || '') + '"><div id="cCmp"></div>';
+  if (ed && !R) h += '<label>Action</label><div class="chips">' + actTypes().map(function (t, i) { return '<button class="chip' + (CORR.action === t ? ' on' : '') + '" onclick="CORR.action=actTypes()[' + i + '];renderCorr()">' + esc(stepShort(t)) + '</button>'; }).join('') + '</div>' +
+    '<label>Action date</label><input id="cDate" type="date" value="' + esc(x.date) + '" max="' + todayIso() + '">';
+  if (!ed) h += '<div class="ban" style="margin:10px 0 0;background:#FBE1E3;border-color:#F3C3C8;color:#7A1A26"><b style="color:#A1182B">' + ic('alert') + ' This entry will be removed</b>It stays visible in the history as "Deleted", with your reason.</div>';
+  h += '</div><div class="sec"><h4><i>' + ic('doc') + '</i>Reason (compulsory)</h4><textarea id="cReason" rows="2" maxlength="300" style="margin-top:8px" placeholder="e.g. Typing mistake – DRC-03 shows ₹12,465"></textarea>' +
+    '<div class="hint" style="margin-top:6px">The change is saved at once. The old figure and your reason stay in the history and in the sheet "Corrections" (seen by the Unit Head and Division office).</div></div>' +
+    '<div id="cErr" class="err" style="margin:10px 16px"></div><div class="savebar"><button class="btn sec2" onclick="goBack()">Cancel</button><button class="btn" onclick="saveCorr()">' + (ed ? 'Save correction' : 'Delete entry') + '</button></div>';
+  var keep = $('cReason') ? $('cReason').value : '';
+  $('sCorr').innerHTML = h; $('cReason').value = keep; corrCmp();
+}
+function corrCmp() {
+  if (!$('cCmp')) return; var a = Number(String($('cAmt').value).replace(/[,\s]/g, '')) || 0, x = CORR.x;
+  $('cCmp').innerHTML = a && a !== Number(x.amount) ? '<div class="cmp"><span>Amount:</span><span class="old">₹' + inr(x.amount) + '</span><span>→</span><span class="new">₹' + inr(a) + '</span></div>' : '';
+}
+function saveCorr() {
+  var x = CORR.x, R = CORR.kind === 'rec', ed = CORR.change === 'edit', e = $('cErr'), reason = $('cReason').value.trim(); e.textContent = '';
+  var p = { unit: S.unit, sto: S.sto, pin: S.pin, by: S.by, demandId: S.cur.demandId, kind: CORR.kind, at: x.id, change: ed ? 'edit' : 'delete', reason: reason };
+  if (ed && R) { p.amount = String($('cAmt').value).replace(/[,\s]/g, ''); p.date = $('cDate').value; p.mode = CORR.mode; p.ref = $('cRef').value.trim();
+    if (!(Number(p.amount) > 0)) { e.textContent = 'Please enter the correct amount.'; return; }
+    if (p.date < monStart()) { e.textContent = 'Only recoveries made in ' + S.d.monthLabel + ' (' + dmy(monStart()) + ' to today) can be entered.'; return; } }
+  if (ed && !R) { p.action = CORR.action; p.date = $('cDate').value; }
+  if (reason.length < 5) { e.textContent = 'Please write the reason for the correction.'; return; }
+  if (!ed && !confirm('Delete this entry? It will stay in the history as "Deleted".')) return;
   busy(true);
-  api('saveRecovery', { unit: S.unit, sto: S.sto, pin: S.pin, by: S.by, demandId: S.cur.demandId, amount: a, date: $('rDate').value, mode: S.recMode, ref: $('rRef').value, remarks: $('rRem').value })
-    .then(function (n) { busy(false); replaceCase(n); toast('Recovery saved ✓'); goBack(); })
-    .catch(function (err) { busy(false); e.textContent = err; });
+  api('correctEntry', p).then(function (n) {
+    busy(false); replaceCase(n); toast(ed ? 'Correction saved ✓' : 'Entry deleted ✓'); goBack();
+    api('getCases', S.unit, S.sto, S.pin, 'sto').then(function (d) { S.d = d; cachePut(); S.cur = caseById(n.demandId) || S.cur; if (REFRESH[S.screen]) REFRESH[S.screen](); }).catch(function () {});
+    if (S.screen === 'sRec') openRec(n.demandId); else if (S.screen === 'sAct') loadActHist(n.demandId);
+  }).catch(function (err) { busy(false); e.textContent = err; });
 }
 
 /* ---------------- actions form ---------------- */
@@ -551,12 +675,25 @@ function histHtml(items, kind) {
   return out;
 }
 function monthLabel(k) { var m = String(k).match(/^(\d{4})-(\d{2})$/); return m ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1] + '-' + m[1] : k; }
+function corrMap(h) { var m = {}; (h.corrections || []).forEach(function (c) { if (c.change === 'Corrected') (m[c.id] = m[c.id] || []).push(c); }); return m; }
+function fixHtml(kind, x, cm) {
+  var t = (cm[x.id] || []).map(function (c) { return '<div class="fx">' + ic('edit') + ' <span class="chipP ok">Corrected</span> ' + esc(String(c.on).slice(0, 10).split('-').reverse().join('-')) + ' – ' + esc(c.reason) + '<br><s>' + esc(c.old) + '</s></div>'; }).join('');
+  if (S.role === 'sto' && S.d && x.month === S.d.month && x.id) t += '<div class="fx"><a onclick="openCorr(\'' + kind + '\',\'' + esc(x.id) + '\')">' + ic('edit') + ' Correct this entry</a></div>';
+  return t;
+}
+function recEv(r, cm) { return '<div class="ev"><i>' + ic('cash') + '</i><div><b>&#8377;' + inr(r.amount) + ' · ' + esc(r.mode) + '</b><small>' + dmy(r.date) + (r.ref ? ' · ' + esc(r.ref) : '') + (r.remarks ? ' · ' + esc(r.remarks) : '') + ' · ' + esc(r.by) + '</small>' + fixHtml('rec', r, cm) + '</div></div>'; }
+function delItems(h, kind) {
+  return (h.corrections || []).filter(function (c) { return c.change === 'Deleted' && (!kind || c.kind === kind); }).map(function (c) {
+    return { month: c.month, date: String(c.on).slice(0, 10), html: '<div class="ev del"><i>' + ic(c.kind === 'Recovery' ? 'cash' : 'gavel') + '</i><div><b><s>' + esc(c.kind) + ' · ' + esc(c.old) + '</s> <span class="chipP no">Deleted</span></b><small>Deleted by ' + esc(c.by) + ' on ' + esc(String(c.on).slice(0, 10).split('-').reverse().join('-')) + ' – ' + esc(c.reason) + '</small></div></div>' };
+  });
+}
 function actItems(h) {
-  return h.actions.map(function (a) { return { month: a.month, html: '<div class="ev"><i>' + actIcon(a.action) + '</i><div><b>' + esc(stepShort(a.action)) + '</b><small>' + dmy(a.date) + (a.ref ? ' · ' + esc(a.ref) : '') + (a.remarks ? ' · ' + esc(a.remarks) : '') + ' · ' + esc(a.by) + '</small></div></div>' }; });
+  var cm = corrMap(h);
+  return h.actions.map(function (a) { return { month: a.month, html: '<div class="ev"><i>' + actIcon(a.action) + '</i><div><b>' + esc(stepShort(a.action)) + '</b><small>' + dmy(a.date) + (a.ref ? ' · ' + esc(a.ref) : '') + (a.remarks ? ' · ' + esc(a.remarks) : '') + ' · ' + esc(a.by) + '</small>' + fixHtml('act', a, cm) + '</div></div>' }; });
 }
 function loadActHist(id) {
   $('aHist').innerHTML = '<div class="hint">Loading…</div>';
-  api('getHistory', S.unit, S.sto, S.pin, id, 'sto').then(function (h) { $('aHist').innerHTML = histHtml(actItems(h), 'act'); })
+  api('getHistory', S.unit, S.sto, S.pin, id, 'sto').then(function (h) { S.hist = h; $('aHist').innerHTML = histHtml(actItems(h).concat(delItems(h, 'Action')), 'act'); })
     .catch(function () { $('aHist').innerHTML = '<div class="hint">History not available offline.</div>'; });
 }
 function saveAct() {
@@ -564,10 +701,19 @@ function saveAct() {
   if (!S.actType) { e.textContent = 'Please select the action taken.'; return; }
   if (!$('aDate').value) { e.textContent = 'Please enter the date.'; return; }
   if (/^other/i.test(S.actType) && !$('aRem').value.trim()) { e.textContent = 'Please describe the action in Remarks.'; return; }
-  busy(true);
-  api('saveAction', { unit: S.unit, sto: S.sto, pin: S.pin, by: S.by, demandId: S.cur.demandId, action: S.actType, date: $('aDate').value, ref: $('aRef').value, remarks: $('aRem').value })
+  var sendA = function (dup) { busy(true);
+  api('saveAction', { unit: S.unit, sto: S.sto, pin: S.pin, by: S.by, demandId: S.cur.demandId, action: S.actType, date: $('aDate').value, ref: $('aRef').value, remarks: $('aRem').value, confirmDup: !!dup })
     .then(function (n) { busy(false); var old = caseById(n.demandId); n.actsMonth = (old && old.actsMonth || 0) + 1; var i = S.d.cases.indexOf(old); if (i >= 0) S.d.cases[i] = n; cachePut(); toast('Action added ✓'); goBack(); })
-    .catch(function (err) { busy(false); e.textContent = err; });
+    .catch(function (err) {
+      busy(false); err = String(err);
+      if (err.indexOf('DUP|') !== 0) { e.textContent = err; return; }
+      var p = JSON.parse(err.slice(4));
+      dupSheet({ title: 'Same action already recorded?', sub: 'This case already has this action on the same date.', needRef: false,
+        tick: 'This is a <b>separate action</b>, not the same one recorded earlier.',
+        rows: [['Action', esc(stepShort(p.action)), esc(stepShort(S.actType)), true], ['Date', esc(p.date), dmy($('aDate').value), true], ['Reference', esc(p.ref || '–'), esc($('aRef').value || '–')], ['Entered', esc(p.at) + '<br>' + esc(p.by), 'now']],
+        yes: function () { sendA(true); } });
+    }); };
+  sendA(false);
 }
 
 /* ---------------- case summary ---------------- */
@@ -585,7 +731,7 @@ function openCase(id, again) {
     card('', ic('cash'), 'Recovery · this month', '&#8377;' + inr(c.recovered) + ' recovered', c.recMode ? '<br><span>' + esc(c.recMode) + ' · ' + dmy(c.recDate) + '</span>' : '', ro ? '' : '<button class="mb" onclick="openRec(\'' + esc(c.demandId) + '\')">+ Add</button>') +
     card('', ic('gavel'), 'Actions · ' + (c.actsMonth || 0) + ' this month', esc(last), '', ro ? '' : '<button class="mb" onclick="openAct(\'' + esc(c.demandId) + '\')">+ Add</button>');
   renderHubLedger(); renderHubBrk();
-  $('hubInfo').innerHTML = [['Demand ID', esc(c.demandId)], ['Recovery ID', esc(c.recoveryId)], ['Demand order date', dmy(c.demandDate)],
+  $('hubInfo').innerHTML = [['Demand ID', esc(c.demandId)], ['Recovery ID', esc(c.recoveryId)], ['Demand order date', dmy(c.demandDate)], ['Pending for', daysTxt(c, true)],
     ['Tax period', esc(c.taxPeriod || '–')], ['Year (F.Y.)', esc(fyOf(c) || '–')], ['Section', esc(c.section || '–')], ['Source of demand', esc(c.source || '–')],
     ['Trade name', esc(c.tradeName || '–')], ['Case type', esc(c.type)], ['Demand status', esc(c.demandStatus)],
     ['Original demand', '&#8377;' + inr(c.original)], ['Pending demand (DCR)', '&#8377;' + inr(c.pending)], ['Recovered this month', '&#8377;' + inr(c.recovered)], ['STO', esc(c.unit) + ' · ' + esc(c.sto)],
@@ -593,9 +739,11 @@ function openCase(id, again) {
     .map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('');
   $('hubHist').innerHTML = '<div class="hint">Loading…</div>';
   api('getHistory', S.unit, S.role === 'sto' ? S.sto : c.sto, S.pin, c.demandId, S.role === 'sto' ? 'sto' : 'unit').then(function (h) {
-    var items = actItems(h).concat(h.recoveries.map(function (r) { return { month: r.month, date: r.date, html: '<div class="ev"><i>' + ic('cash') + '</i><div><b>Recovered &#8377;' + inr(r.amount) + ' · ' + esc(r.mode) + '</b><small>' + dmy(r.date) + (r.ref ? ' · ' + esc(r.ref) : '') + ' · ' + esc(r.by) + '</small></div></div>' }; }));
+    S.hist = h; var cm = corrMap(h);
+    var items = actItems(h).concat(h.recoveries.map(function (r) { return { month: r.month, date: r.date, html: '<div class="ev"><i>' + ic('cash') + '</i><div><b>Recovered &#8377;' + inr(r.amount) + ' · ' + esc(r.mode) + '</b><small>' + dmy(r.date) + (r.ref ? ' · ' + esc(r.ref) : '') + ' · ' + esc(r.by) + '</small>' + fixHtml('rec', r, cm) + '</div></div>' }; }));
     h.actions.forEach(function (a, i) { items[i].date = a.date; });
-    h.categories.forEach(function (k) { items.push({ month: k.month, date: k.month + '-00', html: '<div class="ev"><i>' + ic('folder') + '</i><div><b>Category: ' + esc(CAT_SHORT[k.category] || k.category) + ' (' + esc(k.how) + ')</b><small>' + esc(k.details || '') + ' ' + esc(k.by) + '</small></div></div>' }); });
+    items = items.concat(delItems(h));
+    h.categories.filter(function (k) { return String(k.by || '').toLowerCase() !== 'admin'; }).forEach(function (k) { items.push({ month: k.month, date: k.month + '-00', html: '<div class="ev"><i>' + ic('folder') + '</i><div><b>Category: ' + esc(CAT_SHORT[k.category] || k.category) + ' (' + esc(k.how) + ')</b><small>' + esc(k.details || '') + ' ' + esc(k.by) + '</small></div></div>' }); });
     items.sort(function (a, b) { return a.month === b.month ? (b.date || '').localeCompare(a.date || '') : b.month.localeCompare(a.month); });
     $('hubHist').innerHTML = histHtml(items, 'all');
   }).catch(function () { $('hubHist').innerHTML = '<div class="hint">History not available offline.</div>'; });
@@ -611,11 +759,13 @@ function renderHubLedger() {
     '<div class="row2"><div><label>Cash ledger (all heads)</label><input id="hCash" inputmode="numeric" value="' + HUB.cash + '" placeholder="0" oninput="hubCalc()"></div>' +
     '<div><label>Credit ledger (ITC)</label><input id="hCred" inputmode="numeric" value="' + HUB.credit + '" placeholder="0" oninput="hubCalc()"></div></div>' +
     '<div id="hHeadW"><label>Is the cash under the same head as the demand?</label><div class="seg" id="hHead"><button data-v="Yes" onclick="HUB.head=\'Yes\';hubCalc()">Yes</button><button data-v="No" onclick="HUB.head=\'No\';hubCalc()">No – PMT-09 needed</button></div></div>' +
-    '<div id="hubRes"></div><label>If not adjusted, why?</label><select id="hReason"><option value="">— Select reason —</option>' +
-    S.meta.notAdjReasons.map(function (r) { return '<option' + (HUB.reason === r ? ' selected' : '') + '>' + esc(r) + '</option>'; }).join('') + '</select>' +
+    '<div id="hubRes"></div><label>If not adjusted, why?</label><select id="hReason" onchange="hubReason()"><option value="">— Select reason —</option>' +
+    S.meta.notAdjReasons.filter(function (r) { return !/not cooperating/i.test(r); }).map(function (r) { return '<option' + (HUB.reason === r || (r === 'Other' && /^Other\s*[:–-]/.test(HUB.reason)) ? ' selected' : '') + '>' + esc(r) + '</option>'; }).join('') + '</select>' +
+    '<div id="hRemW" class="hide"><label>Remark (short) – compulsory for "Other"</label><input id="hRem" maxlength="120" placeholder="e.g. Taxpayer asked for 15 days to pay" value="' + esc((HUB.reason.match(/^Other\s*[:–-]\s*(.*)$/) || [])[1] || '') + '"></div>' +
     '<button class="btn sm" onclick="hubSaveLedger()">Save ledger check</button>');
-  hubCalc();
+  hubCalc(); if ($('hReason')) hubReason();
 }
+function hubReason() { $('hRemW').classList.toggle('hide', $('hReason').value !== 'Other'); }
 function hubCalc() {
   var c = S.cur, ro = S.role !== 'sto';
   var cash = ro ? c.cash : ($('hCash').value.replace(/[,\s]/g, '') || (c.cash === '' && $('hCred').value === '' ? '' : '0'));
@@ -639,8 +789,10 @@ function resBox(r, c) {
 function hubSaveLedger() {
   var cash = $('hCash').value.replace(/[,\s]/g, '') || '0', cred = $('hCred').value.replace(/[,\s]/g, '') || '0';
   if (!isNum(cash) || !isNum(cred)) { toast('Please enter numbers only.'); return; }
+  var reason = $('hReason').value;
+  if (reason === 'Other') { var rm = $('hRem').value.trim(); if (rm.length < 3) { toast('Reason "Other": please write a short remark.'); $('hRem').focus(); return; } reason = 'Other: ' + rm; }
   busy(true);
-  api('saveLedger', { unit: S.unit, sto: S.sto, pin: S.pin, by: S.by, demandId: S.cur.demandId, cash: cash, credit: cred, cashHead: HUB.head, reason: $('hReason').value })
+  api('saveLedger', { unit: S.unit, sto: S.sto, pin: S.pin, by: S.by, demandId: S.cur.demandId, cash: cash, credit: cred, cashHead: HUB.head, reason: reason })
     .then(function (n) { busy(false); replaceCase(n); toast('Ledger saved ✓'); openCase(n.demandId, true); })
     .catch(function (e) { busy(false); toast(String(e)); });
 }
@@ -687,6 +839,8 @@ function openUnitView() {
 function openAdmin(info) {
   show('sAdmin', { mode: 'bar', t: 'Month control', s: 'Division Admin · ' + info.monthLabel });
   renderAdmin(info);
+  $('admArch').innerHTML = '<h4><i>' + ic('refresh') + '</i>Keep the app fast</h4><div class="hint">Checking…</div>';
+  api('archiveInfo', S.pin).then(renderArch).catch(function () { $('admArch').innerHTML = ''; });
 }
 function renderAdmin(info) {
   $('admMonth').innerHTML = '<h4><i>' + ic('calendar') + '</i>Current month</h4><div style="font-size:13px;margin-top:8px;line-height:1.8">Month: <b>' + esc(info.monthLabel) + '</b> · started ' + esc(info.startedOn) +
@@ -694,6 +848,18 @@ function renderAdmin(info) {
   $('admLockBox').innerHTML = info.locked ? '<div class="ban ok"><b>' + ic('lock') + ' Categories locked for ' + esc(info.monthLabel) + '</b>Locked on ' + esc(info.lockedOn) + '. STOs now see categories as final.</div>' :
     '<div style="margin:10px 14px 0"><button class="btn" style="margin:0" onclick="lockNow()">' + ic('lock') + ' Lock categories for ' + esc(info.monthLabel) +
     '<br><small style="font-weight:400;font-size:11px;opacity:.85">' + (info.decide + info.confirm ? (info.decide + info.confirm) + ' decisions still pending with STOs · they keep the proposed category' : 'All STOs have decided') + (info.changed ? ' · ' + info.changed + ' changed by STOs' : '') + '</small></button></div>';
+}
+function renderArch(a) {
+  var mx = Math.max.apply(null, a.logs.map(function (l) { return l.rows; }).concat([1]));
+  $('admArch').innerHTML = '<h4><i>' + ic('refresh') + '</i>Keep the app fast – archive old ledger & category entries</h4>' +
+    '<div class="hint" style="margin-top:6px;line-height:1.5">Ledger Log and Category Log grow fastest. Their entries of months before <b>' + esc(monthLabel(a.keepFrom)) + '</b> move to archive tabs in the same Google Sheet (' + esc(a.keepLabel) + ' stay) – nothing is deleted. <b>Recovery and Action logs are never archived</b>, so every case history stays complete. Runs by itself when a new month is started.</div>' +
+    '<table class="szt">' + a.logs.map(function (l) { return '<tr><td>' + esc(l.name) + (l.kept ? ' <small style="color:#17663A">· kept in full</small>' : '') + '</td><td style="width:34%"><div class="bar"><i style="width:' + Math.round(l.rows * 100 / mx) + '%"></i></div></td><td>' + inr(l.rows) + ' rows' + (l.archived ? '<small style="display:block;font-weight:400;color:#888">' + inr(l.archived) + ' in archive</small>' : '') + '</td></tr>'; }).join('') + '</table>' +
+    (a.move ? '<div class="ban" style="margin:10px 0 0"><b>' + inr(a.move) + ' rows can be archived now</b>The app will then read ' + inr(a.rows - a.move) + ' instead of ' + inr(a.rows) + ' ledger / category rows.</div><button class="btn" style="margin-top:10px" onclick="archNow()">' + ic('check') + ' Archive now</button>'
+      : '<div class="ban ok" style="margin:10px 0 0"><b>' + ic('check') + ' Nothing to archive</b>' + (a.moved ? inr(a.moved) + ' rows were just archived. ' : '') + 'Only ' + esc(a.keepLabel) + ' are in the logs.</div>');
+}
+function archNow() {
+  if (!confirm('Move old Ledger Log and Category Log entries to the archive tabs?')) return;
+  busy(true); api('archiveNow', S.pin).then(function (a) { busy(false); toast('Archived ✓'); renderArch(a); }).catch(function (e) { busy(false); toast(String(e)); });
 }
 function lockNow() {
   if (!confirm('Lock categories now? Undecided cases will be treated as Recoverable and STOs cannot change categories this month.')) return;
@@ -756,7 +922,7 @@ function renderReport() {
   $('dType').value = R.type;
   [].forEach.call($('dTabs').children, function (b) { b.classList.toggle('on', b.getAttribute('data-t') === R.tab); });
   $('dAsOn').innerHTML = esc((d.isCurrent ? 'As on ' + d.asOn : d.monthLabel + ' (closed month)') + ' · Target = ' + d.targetPct + '% of pending demand of Recoverable cases') +
-    ' · <button class="lnk" style="display:inline;width:auto;margin:0;padding:0 2px;font-size:12px" onclick="loadReport(R.data && !R.data.isCurrent ? R.data.month : \'\')">' + ic('refresh') + ' Refresh</button> · <span style="opacity:.7">App ' + APP_VER + '</span>' + (d.apiVer === APP_VER ? '' : ' · <b style="color:#A1182B">Script not updated (' + esc(d.apiVer || 'old') + ') – Deploy a new version of Code.gs</b>');
+    ' · <button class="lnk" style="display:inline;width:auto;margin:0;padding:0 2px;font-size:12px" onclick="loadReport(R.data && !R.data.isCurrent ? R.data.month : \'\')">' + ic('refresh') + ' Refresh</button> · <span style="opacity:.7">App ' + APP_VER + '</span>' + (d.apiVer === API_NEED ? '' : ' · <b style="color:#A1182B">Script not updated (' + esc(d.apiVer || 'old') + ') – Deploy a new version of Code.gs</b>');
   var f = { ov: renderOverview, rec: renderRecovery, act: renderActions, led: renderLedgerTab, cat: renderCatTab }[R.tab];
   $('dBody').innerHTML = f();
 }
@@ -822,23 +988,24 @@ var TROPHY = '<svg viewBox="0 0 64 64" class="tro"><defs><linearGradient id="tG"
 function byAmt(rep) { return stoRank(rep).filter(function (x) { return x.recovered > 0; }).sort(function (a, b) { return b.recovered - a.recovered; }); }
 function rkSeg() { return '<span class="rks"><button class="' + (R.rkBy === 'amt' ? 'on' : '') + '" onclick="setR(\'rkBy\',\'amt\')">&#8377; Amount</button><button class="' + (R.rkBy === 'pct' ? 'on' : '') + '" onclick="setR(\'rkBy\',\'pct\')">% Target</button></span>'; }
 function somCard() {
-  var d = R.data, top, label, live = false;
-  if (!d.isCurrent) { top = byAmt(d).slice(0, 3); label = d.monthLabel; }
-  else if (d.som && d.som.top && d.som.top.length) { top = d.som.top; label = d.som.monthLabel; }
-  var lead = d.isCurrent ? byAmt(d)[0] : null;
-  if (!top || !top.length) {
-    if (!lead) return '';
-    top = [lead]; label = d.monthLabel; live = true;
-  }
-  var w = top[0], who = function (x) { return esc(x.sto) + ' · ' + esc(x.unit); };
-  var h = '<div class="som' + (live ? ' live' : '') + '"><div class="somT">' + TROPHY + '<div><span class="somK">' + (live ? 'Race for STO of the Month · ' : 'STO of the Month · ') + esc(label) + '</span>' +
-    '<b class="somN">' + who(w) + '</b>' + (w.name ? '<span class="somP">' + esc(w.name) + '</span>' : '') + '</div></div>' +
-    '<div class="somS"><div class="big"><b>&#8377;' + short(w.recovered) + '</b><span>amount recovered</span></div><div><b>' + (w.actions || 0) + '</b><span>actions</span></div><div><b>' + (w.cases || 0) + '</b><span>cases</span></div></div>';
-  if (live) h += '<div class="somF">Leading so far · the STO of the Month is announced when ' + esc(label) + ' closes</div>';
+  var d = R.data, live = d.isCurrent, L = byAmt(d), lead = L[0], prev = null;
+  if (live && d.som && d.som.top && d.som.top.length) prev = { label: d.som.monthLabel, w: d.som.top[0] };
+  var who = function (x) { return esc(x.sto) + ' · ' + esc(x.unit); };
+  var h = '<div class="som2">';
+  // ---- main: this month's race (or the winner of a closed month) ----
+  h += '<div class="s2Top"><span class="s2K">STO of the Month · ' + esc(d.monthLabel) + '</span>' + (live ? '<span class="s2As"><i class="s2Live"></i>Live · ' + esc(String(d.asOn || '').slice(0, 5)) + '</span>' : '') + '</div>';
+  if (!lead) h += '<div class="s2None">' + TROPHY + '<div><b>No recovery recorded yet</b><span>The first STO to record a recovery takes the lead.</span></div></div>';
   else {
-    if (top.length > 1) h += '<div class="somR">' + top.slice(1).map(function (x, i) { return '<span><i class="md md' + (i + 2) + '">' + (i + 2) + '</i>' + who(x) + ' · <b>&#8377;' + short(x.recovered) + '</b></span>'; }).join('') + '</div>';
-    if (lead && d.isCurrent) h += '<div class="somF">' + esc(d.monthLabel) + ' race · leading now: <b>' + who(lead) + '</b> (&#8377;' + short(lead.recovered) + ')</div>';
+    h += '<div class="s2Lead">' + TROPHY + '<div class="s2Who"><span class="s2Tag">' + (live ? 'Leading so far' : 'Winner') + '</span><b>' + who(lead) + '</b>' + (lead.name ? '<span class="s2Nm">' + esc(lead.name) + '</span>' : '') + '</div></div>' +
+      '<div class="s2Amt"><div class="s2Big"><span>Amount recovered</span><b>&#8377;' + short(lead.recovered) + '</b></div><div><span>Actions</span><b>' + (lead.actions || 0) + '</b></div><div><span>Cases</span><b>' + lead.cases + '</b></div></div>';
+    var rest = L.slice(1, 3);
+    if (rest.length) h += '<div class="s2Run">' + rest.map(function (x, k) {
+      return '<div class="s2R"><i class="md md' + (k + 2) + '">' + (k + 2) + '</i><div class="s2Rn"><b>' + who(x) + '</b><div class="s2Bar"><i style="width:' + Math.max(3, Math.round(x.recovered * 100 / lead.recovered)) + '%"></i></div></div><span class="s2Ra">&#8377;' + short(x.recovered) + '<small>' + (k === 0 ? '' : '') + '&#8377;' + short(lead.recovered - x.recovered) + ' behind</small></span></div>';
+    }).join('') + '</div>';
   }
+  // ---- previous month's STO of the Month ----
+  if (prev) h += '<div class="s2Prev"><span class="s2PK">' + ic('trophy') + ' Previous month · ' + esc(prev.label) + '</span><div class="s2Pw"><b>' + who(prev.w) + '</b>' + (prev.w.name ? '<span>' + esc(prev.w.name) + '</span>' : '') + '</div><b class="s2Pa">&#8377;' + short(prev.w.recovered) + '</b></div>';
+  else if (live) h += '<div class="s2Prev none"><span class="s2PK">' + ic('trophy') + ' Previous month</span><div class="s2Pw"><span>The first STO of the Month will be announced when ' + esc(d.monthLabel) + ' closes.</span></div></div>';
   return h + '</div>';
 }
 /* Performance comparison: Units (or STOs of the selected Unit) – Recovery / Ledgers / Actions */
@@ -1324,7 +1491,7 @@ function upFileChosen(inp) {
 }
 /** keep only the columns the app needs (smaller upload) */
 function upTrim(rows) {
-  var want = ['unit', 'sto', 'stoseries', 'demandid', 'recoveryid', 'dateofdemandorder', 'gstin/temporaryid', 'legalname', 'mobileno.', 'section/act', 'demandstatus', 'originaldemandinrs.', 'pendingdemandinrs.', 'status(active/cancel)', 'tradename', 'sourceofdemand'];
+  var want = ['unit', 'sto', 'stoseries', 'demandid', 'recoveryid', 'dateofdemandorder', 'gstin/temporaryid', 'legalname', 'mobileno.', 'section/act', 'demandstatus', 'originaldemandinrs.', 'pendingdemandinrs.', 'status(active/cancel)', 'tradename', 'sourceofdemand', 'days', 'todate'];
   var key = function (s) { return String(s).replace(/\s+/g, '').toLowerCase(); }, cols = null, out = [];
   rows.forEach(function (r) {
     var ks = r.map(key);
@@ -1430,11 +1597,11 @@ function oiFullChanged() {
   api('previewOldImport', S.pin, OI.table, $('oiFull').checked).then(function (p) { busy(false); OI.prev = p; renderOiPrev(); }).catch(function (e) { busy(false); toast(String(e)); });
 }
 function verBan() {
-  return '<div class="ban stale" style="margin:10px 0 0"><b>' + ic('alert') + ' The Google Apps Script is still the OLD version</b>The app is ' + APP_VER + ' but the script is ' + esc(OI.prev.apiVer || 'older') + '. Nothing was changed. ' +
+  return '<div class="ban stale" style="margin:10px 0 0"><b>' + ic('alert') + ' The Google Apps Script is still the OLD version</b>The app needs script ' + API_NEED + ' but the script is ' + esc(OI.prev.apiVer || 'older') + '. Nothing was changed. ' +
     'In the Google Sheet: Extensions → Apps Script → paste the new Code.gs → Save → <b style="display:inline">Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy</b>. Then choose the file again.</div>';
 }
 function renderOiPrev() {
-  if (OI.prev && OI.prev.apiVer !== APP_VER) { $('oiPrev').innerHTML = verBan(); return; }
+  if (OI.prev && OI.prev.apiVer !== API_NEED) { $('oiPrev').innerHTML = verBan(); return; }
   var p = OI.prev, html = '<div class="upbox"><div class="uph">' + ic('refresh') + '<div><b>Old app entries after ' + esc(p.from) + '</b><span>' + (p.rows ? p.rows + (p.rows === 1 ? ' new entry' : ' new entries') + ' · up to ' + esc(p.to) : 'nothing new') + '</span></div></div>';
   var remBox = '';
   if (p.remDup || p.remOld) {
@@ -1515,6 +1682,15 @@ function clRow(c, right, sub, rank) {
 }
 function renderCL() {
   [].forEach.call($('clTabs').children, function (b) { b.classList.toggle('on', b.getAttribute('data-t') === CL.tab); });
+  if (CL.tab === 'cor') {
+    var q0 = (CL.q || '').toLowerCase(), cr = (CL.d.corr || []).filter(function (c) { return (CL.unit === 'all' || c.u === CL.unit) && (CL.sto === 'all' || c.s === CL.sto) && (!q0 || (c.n + ' ' + c.id).toLowerCase().indexOf(q0) >= 0); });
+    var hh = clHead(clN(cr.length, 'correction') + ' by STOs · ' + esc(CL.d.monthLabel), 'view only') + cr.map(function (c) {
+      return '<div class="apr"><div class="t"><b>' + esc(shortU(c.u)) + ' · ' + esc(c.s) + ' · ' + esc(c.n) + '</b><span>' + esc(c.on) + '</span></div><div class="w">' + esc(c.k) + ' · ' + esc(c.id) + ' · by ' + esc(c.b) + '</div>' +
+        '<div class="cmp">' + (c.c === 'Deleted' ? '<span class="chipP no" style="margin:0">Deleted</span><span class="old">' + esc(c.o) + '</span>' : '<span class="old">' + esc(c.o) + '</span><span>→</span><span class="new">' + esc(c.w) + '</span>') + '</div><div class="rs"><b>Reason:</b> ' + esc(c.rs) + '</div></div>';
+    }).join('') + (cr.length ? '' : '<div class="empty">No corrections this month</div>');
+    CL.xl = { cols: ['Corrected on', 'Unit', 'STO', 'Demand ID', 'Legal Name', 'Entry', 'Change', 'Old', 'New', 'Reason', 'By'], rows: cr.map(function (c) { return [c.on, c.u, c.s, c.id, c.n, c.k, c.c, c.o, c.w, c.rs, c.b]; }), name: 'Corrections' };
+    $('clPills').innerHTML = ''; $('clSrch').classList.remove('hide'); $('clBody').innerHTML = hh; return;
+  }
   var d = CL.d, base = clBase(), W = base.filter(function (c) { return c.c === 'Recoverable'; }), sub = CL.sub[CL.tab], pills = [], list = [], html = '', rows = [], cols = [], F = d.freshDays;
   var P = function (k, t, n) { pills.push('<button class="pill' + (sub === k ? ' on' : '') + '" onclick="clSub(\'' + k + '\')">' + t + (n != null ? ' <em>' + n + '</em>' : '') + '</button>'); };
   var sum = function (a, f) { return a.reduce(function (s, x) { return s + f(x); }, 0); };
