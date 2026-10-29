@@ -694,3 +694,4 @@ input.bad{border-color:#C33441!important;background:#FFF7F8!important;color:#A11
 .ev.del b s,.ev .fx s{color:#A1182B}.ev.del{opacity:.85}.ev .fx{color:#5E6580}.ev .fx .ic{width:13px;height:13px;vertical-align:-2px}
 .fx a{cursor:pointer}.twI[onclick]{cursor:pointer}.twI[onclick]:active{background:#F7F3E8}
 #sCorr .chips{margin-top:8px}
+#sCase.honly #hubCat,#sCase.honly #hubCards,#sCase.honly #hubLedger,#sCase.honly #hubBrk{display:none!important}

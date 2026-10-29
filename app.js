@@ -1,5 +1,5 @@
 /* STO Recovery App – Gandhinagar Division · version 2 · Developed by Mehul Ranavasiya */
-var APP_VER = '2.32', API_NEED = '2.31';   // API_NEED = version of Code.gs this app needs
+var APP_VER = '2.33', API_NEED = '2.31';   // API_NEED = version of Code.gs this app needs
 var API_URL = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) || '';
 var S = { meta: null, role: '', unit: '', sto: '', pin: '', by: '', d: null, stack: [], screen: '', head: null, cur: null,
           catF: '', ledF: 'todo', listMode: 'rec', listF: 'all', catSel: '', recMode: '', actType: '', fld: {} };
@@ -476,7 +476,7 @@ function renderList() {
   $('listRows').innerHTML = list.length ? list.map(function (c) {
     var id = esc(c.demandId), meta, cls, fn;
     if (mode === 'rec') { cls = c.recovered > 0 ? 'g' : ''; meta = c.recovered > 0 ? '<span>' + ic('cash') + ' Recovered &#8377;' + short(c.recovered) + ' this month' + (c.recMode ? ' · ' + esc(c.recMode) : '') + '</span>' : '<span>No recovery this month</span>'; fn = 'openRec'; }
-    else if (hist) { var la = lastAct(c); cls = ''; meta = catChip(c.cat || '') + '<span>' + ic('clock') + ' ' + (la ? 'Last action ' + dmy(la) : 'No action recorded') + '</span>'; fn = 'openCase'; }
+    else if (hist) { var la = lastAct(c); cls = ''; meta = catChip(c.cat || '') + '<span>' + ic('clock') + ' ' + (la ? 'Last action ' + dmy(la) : 'No action recorded') + '</span>'; fn = 'openCaseHist'; }
     else if (mode === 'act' && S.listF === 'since') { var l2 = lastAct(c); cls = 'r'; meta = '<span>' + ic('alert') + ' ' + (l2 ? 'Last action ' + dmy(l2) + ' · ' + daysAgo(l2) + ' days ago' : 'No action ever recorded') + '</span>'; fn = 'openAct'; }
     else if (mode === 'act') {
       cls = c.actsMonth ? 'g' : '';
@@ -717,9 +717,12 @@ function saveAct() {
 }
 
 /* ---------------- case summary ---------------- */
-function openCase(id, again) {
+function openCaseHist(id) { openCase(id, false, true); }
+function openCase(id, again, histOnly) {
   var c = caseById(id); if (!c) return; S.cur = c;
-  var ro = S.role !== 'sto', head = { mode: 'bar', t: c.name, s: c.gstin + ' · ' + c.type + ' · Sec ' + c.section, k: caseKpis(c) };
+  if (!again) S.caseHist = !!histOnly;
+  $('sCase').classList.toggle('honly', !!S.caseHist);              // Actions → History: only case details and history
+  var ro = S.role !== 'sto', head = { mode: 'bar', t: c.name, s: c.gstin + ' · ' + c.type + ' · Sec ' + c.section, k: S.caseHist ? '' : caseKpis(c) };
   if (again) setHead(head); else show('sCase', head);
   var rec = c.cat === 'Recoverable';
   $('hubCat').classList.toggle('hide', rec);
