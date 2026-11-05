@@ -1,5 +1,5 @@
 /* STO Recovery App – Gandhinagar Division · version 2 · Developed by Mehul Ranavasiya */
-var APP_VER = '2.33', API_NEED = '2.31';   // API_NEED = version of Code.gs this app needs
+var APP_VER = '2.35', API_NEED = '2.35';   // API_NEED = version of Code.gs this app needs
 var API_URL = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) || '';
 var S = { meta: null, role: '', unit: '', sto: '', pin: '', by: '', d: null, stack: [], screen: '', head: null, cur: null,
           catF: '', ledF: 'todo', listMode: 'rec', listF: 'all', catSel: '', recMode: '', actType: '', fld: {} };
@@ -14,7 +14,7 @@ function dmy(s) { if (!s) return ''; var p = String(s).slice(0, 10).split('-'); 
 function store(k, v) { try { localStorage.setItem('rec2_' + k, v); } catch (e) {} }
 function recall(k) { try { return localStorage.getItem('rec2_' + k) || ''; } catch (e) { return ''; } }
 function busy(on) { $('loading').classList.toggle('hide', !on); }
-function toast(t) { var e = $('toast'); e.textContent = t; e.classList.remove('hide'); clearTimeout(toast.t); toast.t = setTimeout(function () { e.classList.add('hide'); }, 2800); }
+function toast(t) { var e = $('toast'); if (!e) return; e.textContent = t; e.classList.remove('hide'); clearTimeout(toast.t); toast.t = setTimeout(function () { e.classList.add('hide'); }, 2800); }
 function stepShort(s) { if (!s) return ''; var i = s.indexOf('('); return i > 8 ? s.slice(0, i).trim() : s; }
 function cases(n) { return n + (n === 1 ? ' case' : ' cases'); }
 function shortU(u) { var m = String(u).match(/(\d+)/); return m ? 'G-' + m[1] : u; }
@@ -32,6 +32,10 @@ function ringSvg(p, size) {
 /* ---------------- server ---------------- */
 function api(fn) {
   var args = [].slice.call(arguments, 1);
+  if (S.staff) {                                           // staff: every save carries the staff ID; reads use the staff role
+    args = args.map(function (a) { return a && typeof a === 'object' && !Array.isArray(a) && 'pin' in a ? Object.assign({}, a, { staff: S.staff.id }) : a; });
+    if ((fn === 'getCases' || fn === 'getHistory') && args[args.length - 1] === 'sto') args[args.length - 1] = 'staff|' + S.staff.id;
+  }
   if (!API_URL || /PASTE_WEB_APP_URL/.test(API_URL)) return Promise.reject('App link not set. Ask the Division office (config.js).');
   return fetch(API_URL, { method: 'POST', credentials: 'omit', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn: fn, args: args }) })
     .then(function (r) { return r.json(); })
@@ -40,10 +44,12 @@ function api(fn) {
 }
 
 /* ---------------- navigation ---------------- */
-var VIEWS = ['sStart', 'sLogin', 'sRole', 'sHome', 'sCat', 'sCatForm', 'sLedger', 'sList', 'sRec', 'sAct', 'sCase', 'sAdmin', 'sDash', 'sOff', 'sRev', 'sLists', 'sCorr'];
+var VIEWS = ['sStart', 'sLogin', 'sRole', 'sHome', 'sCat', 'sCatForm', 'sLedger', 'sList', 'sRec', 'sAct', 'sCase', 'sAdmin', 'sDash', 'sOff', 'sRev', 'sLists', 'sCorr',
+             'sStaffLogin', 'sStaff', 'sAlloc', 'sNewMon', 'sWork'];
 var REFRESH = {
   sHome: function () { renderHome(); }, sCat: function () { renderCat(); }, sLedger: function () { renderLedger(); },
-  sList: function () { renderList(); }, sCase: function () { if (S.cur) openCase(S.cur.demandId, true); }, sDash: function () { renderReport(); }
+  sList: function () { renderList(); }, sCase: function () { if (S.cur) openCase(S.cur.demandId, true); }, sDash: function () { renderReport(); },
+  sAlloc: function () { renderAlloc(); }, sStaff: function () { if (!STF.edit) renderStaff(); }
 };
 /** head: {mode:'hero'|'heroSm'|'bar', t, s, k(kpis html)} */
 function show(id, head, opt) {
@@ -117,24 +123,29 @@ function pinBox() {
   var u = S.meta.units.find(function (x) { return x.name === $('unit').value; });
   var s = u && u.stos.find(function (x) { return x.name === $('sto').value; });
   $('pinWrap').classList.toggle('hide', !(s && s.hasPin));
+  byBox();
 }
 
 /* ---------------- STO login & data ---------------- */
 function ckey(u, s) { return 'cases_' + u + '|' + s; }
 function cacheGet(u, s, pin) { try { var o = JSON.parse(localStorage.getItem('rec2_' + ckey(u, s)) || 'null'); return o && o.pin === pin ? o.data : null; } catch (e) { return null; } }
-function cachePut() { if (S.role !== 'sto') return; try { localStorage.setItem('rec2_' + ckey(S.unit, S.sto), JSON.stringify({ pin: S.pin, data: S.d })); } catch (e) {} }
+function cachePut() { if (S.role !== 'sto' || S.staff) return; try { localStorage.setItem('rec2_' + ckey(S.unit, S.sto), JSON.stringify({ pin: S.pin, data: S.d })); } catch (e) {} }
 function loginSto() {
-  var unit = $('unit').value, sto = $('sto').value, by = $('by').value.trim(), pin = $('pin').value;
+  var unit = $('unit').value, sto = $('sto').value, known = stoNameKnown(), by = known || $('by').value.replace(/\s+/g, ' ').trim(), pin = $('pin').value;
   $('loginErr').textContent = '';
   if (!unit || !sto) { $('loginErr').textContent = 'Please select Unit and STO.'; return; }
-  if (!by) { $('loginErr').textContent = 'Please enter your name.'; return; }
-  store('unit', unit); store('sto', sto); store('by', by);
-  S.role = 'sto'; S.unit = unit; S.sto = sto; S.pin = pin; S.by = by;
+  if (by.length < 3) { $('loginErr').textContent = 'Please enter your name (asked only once).'; return; }
+  store('unit', unit); store('sto', sto); if (!known) store('by', by);
+  S.role = 'sto'; S.unit = unit; S.sto = sto; S.pin = pin; S.by = by; S.staff = null; S.nmSeen = false;
   var saved = cacheGet(unit, sto, pin);
   if (saved) { S.d = saved; goHome(); syncNote('Refreshing latest data…'); } else busy(true);
   api('getCases', unit, sto, pin, 'sto').then(function (d) {
-    busy(false); syncNote(''); S.d = d; cachePut();
+    busy(false); syncNote(''); S.d = d;
+    if (d.stoName) { S.by = d.stoName; if (d.stoName !== known) metaSetName(unit, sto, d.stoName); }
+    else api('setStoName', unit, sto, pin, by).then(function (r) { S.d.stoName = r.name; metaSetName(unit, sto, r.name); cachePut(); }).catch(function () {});
+    cachePut();
     if (!saved) goHome(); else if (REFRESH[S.screen]) REFRESH[S.screen]();
+    if (saved && S.screen === 'sHome' && d.newMonth && !S.nmSeen) openNewMon();
   }).catch(function (e) {
     busy(false);
     if (saved) syncNote('Could not refresh – showing data saved on this phone.');
@@ -144,15 +155,18 @@ function loginSto() {
 function syncNote(t) { var e = $('syncHome'); e.textContent = t; e.classList.toggle('hide', !t); }
 function openLogin() { show('sLogin', { mode: 'bar', t: 'STO Login', s: (S.meta && S.meta.division) || 'Gandhinagar Division' }); }
 function openRoleLogin() { setRole(ROLE); show('sRole', { mode: 'bar', t: 'Monitoring Officers Login', s: (S.meta && S.meta.division) || 'Gandhinagar Division' }); }
-function logout() { S.rep = null; S.role = ''; S.d = null; toStart(); show('sLogin', { mode: 'bar', t: 'STO Login', s: S.meta.division }); }
+function logout() {
+  if (S.staff) { S.staff = null; S.pin = ''; S.role = ''; S.d = null; S.by = ''; toStart(); return; }
+  S.rep = null; S.role = ''; S.d = null; toStart(); show('sLogin', { mode: 'bar', t: 'STO Login', s: S.meta.division }); }
 function goHome() {
   show('sHome', { mode: 'heroSm', t: S.unit + ' · ' + S.sto, s: S.by + ' · ' + S.d.monthLabel }, { reset: [{ id: 'sStart', head: { mode: 'hero', t: 'Recovery – ' + S.meta.division, s: 'Choose how you want to open the app' } }] });
   renderHome();
+  if (!S.staff && S.d.newMonth && !S.nmSeen) openNewMon();
 }
 function work() { return S.d.cases.filter(function (c) { return c.cat === 'Recoverable'; }); }
 function checkedToday(c) { return c.ledgerOn && c.ledgerOn.slice(0, 10) === S.d.today; }
 function caseById(id) { return S.d.cases.find(function (c) { return c.demandId === id; }); }
-function replaceCase(n) { var i = S.d.cases.findIndex(function (c) { return c.demandId === n.demandId; }); if (i >= 0) { n.actsMonth = S.d.cases[i].actsMonth; S.d.cases[i] = n; } cachePut(); return n; }
+function replaceCase(n) { var i = S.d.cases.findIndex(function (c) { return c.demandId === n.demandId; }); if (i >= 0) { n.actsMonth = S.d.cases[i].actsMonth; if (n.alloc == null && S.d.cases[i].alloc) { n.alloc = S.d.cases[i].alloc; n.allocName = S.d.cases[i].allocName; } S.d.cases[i] = n; } cachePut(); return n; }
 /* Active / Cancelled filter (STO screens) – Active by default */
 function tyNow() { if (!S.ty) S.ty = recall('ty') || 'A'; return S.ty; }
 function tyOk(c) { var t = tyNow(); return t === 'all' || (t === 'C') === (c.type === 'Cancelled'); }
@@ -219,9 +233,11 @@ function renderToday() {
 }
 function sinceCut3() { var t = new Date(S.d.today || Date.now()); t.setMonth(t.getMonth() - 3); return t.toISOString().slice(0, 10); }
 function renderHome() {
-  $('whoName').textContent = S.by + ' · ' + S.unit + ' · ' + S.sto;
+  $('whoName').textContent = S.by + ' · ' + S.unit + ' · ' + S.sto + (S.staff ? ' · ' + S.d.cases.length + ' cases given by your STO' : '');
+  $('whoBtn').innerHTML = ic('logout') + (S.staff ? ' Log out' : ' Change');
   renderToday();
-  loadStanding();
+  if (S.staff) $('myStand').classList.add('hide'); else loadStanding();
+  renderTeamCard();
   var cs = S.d.cases, w = work(), dec = 0, con = 0;
   cs.forEach(function (c) { if (c.catStatus === 'decide') dec++; else if (c.catStatus === 'confirm') con++; });
   if (!S.d.locked && dec + con > 0) {
@@ -509,7 +525,8 @@ function daysPend(c) {
 function daysTxt(c, long) { var p = daysPend(c); return p ? inr(p.n) + ' days' + (long && p.on ? ' <small style="color:#888">(as on ' + esc(p.on) + ')</small>' : '') : '–'; }
 function idLine(c) {
   var fy = fyOf(c);
-  return '<div class="idl"><b>' + esc(c.demandId) + '</b>' + (c.section ? ' · Sec ' + esc(c.section) : '') + (fy ? ' · F.Y. ' + esc(fy) : '') + '</div>';
+  var al = !S.staff && c.allocName && S.screen !== 'sAlloc' ? ' <span class="zalch">' + esc(c.allocName) + '</span>' : '';
+  return '<div class="idl"><b>' + esc(c.demandId) + '</b>' + (c.section ? ' · Sec ' + esc(c.section) : '') + (fy ? ' · F.Y. ' + esc(fy) : '') + al + '</div>';
 }
 function caseBox(c) {
   var fy = fyOf(c), rows = [
@@ -678,7 +695,7 @@ function monthLabel(k) { var m = String(k).match(/^(\d{4})-(\d{2})$/); return m 
 function corrMap(h) { var m = {}; (h.corrections || []).forEach(function (c) { if (c.change === 'Corrected') (m[c.id] = m[c.id] || []).push(c); }); return m; }
 function fixHtml(kind, x, cm) {
   var t = (cm[x.id] || []).map(function (c) { return '<div class="fx">' + ic('edit') + ' <span class="chipP ok">Corrected</span> ' + esc(String(c.on).slice(0, 10).split('-').reverse().join('-')) + ' – ' + esc(c.reason) + '<br><s>' + esc(c.old) + '</s></div>'; }).join('');
-  if (S.role === 'sto' && S.d && x.month === S.d.month && x.id) t += '<div class="fx"><a onclick="openCorr(\'' + kind + '\',\'' + esc(x.id) + '\')">' + ic('edit') + ' Correct this entry</a></div>';
+  if (S.role === 'sto' && S.d && x.month === S.d.month && x.id && (!S.staff || x.by === S.by)) t += '<div class="fx"><a onclick="openCorr(\'' + kind + '\',\'' + esc(x.id) + '\')">' + ic('edit') + ' Correct this entry</a></div>';
   return t;
 }
 function recEv(r, cm) { return '<div class="ev"><i>' + ic('cash') + '</i><div><b>&#8377;' + inr(r.amount) + ' · ' + esc(r.mode) + '</b><small>' + dmy(r.date) + (r.ref ? ' · ' + esc(r.ref) : '') + (r.remarks ? ' · ' + esc(r.remarks) : '') + ' · ' + esc(r.by) + '</small>' + fixHtml('rec', r, cm) + '</div></div>'; }
@@ -724,6 +741,7 @@ function openCase(id, again, histOnly) {
   $('sCase').classList.toggle('honly', !!S.caseHist);              // Actions → History: only case details and history
   var ro = S.role !== 'sto', head = { mode: 'bar', t: c.name, s: c.gstin + ' · ' + c.type + ' · Sec ' + c.section, k: S.caseHist ? '' : caseKpis(c) };
   if (again) setHead(head); else show('sCase', head);
+  renderHubAlloc(c, null);
   var rec = c.cat === 'Recoverable';
   $('hubCat').classList.toggle('hide', rec);
   $('hubCat').innerHTML = '<b>Category: ' + esc(c.cat || 'Not decided') + '</b>' + esc(c.catDetails || '') + (c.cat ? '' : ' Decide the category in Case Categories.');
@@ -742,7 +760,7 @@ function openCase(id, again, histOnly) {
     .map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('');
   $('hubHist').innerHTML = '<div class="hint">Loading…</div>';
   api('getHistory', S.unit, S.role === 'sto' ? S.sto : c.sto, S.pin, c.demandId, S.role === 'sto' ? 'sto' : 'unit').then(function (h) {
-    S.hist = h; var cm = corrMap(h);
+    S.hist = h; var cm = corrMap(h); if (S.cur === c) renderHubAlloc(c, h);
     var items = actItems(h).concat(h.recoveries.map(function (r) { return { month: r.month, date: r.date, html: '<div class="ev"><i>' + ic('cash') + '</i><div><b>Recovered &#8377;' + inr(r.amount) + ' · ' + esc(r.mode) + '</b><small>' + dmy(r.date) + (r.ref ? ' · ' + esc(r.ref) : '') + ' · ' + esc(r.by) + '</small>' + fixHtml('rec', r, cm) + '</div></div>' }; }));
     h.actions.forEach(function (a, i) { items[i].date = a.date; });
     items = items.concat(delItems(h));
@@ -893,10 +911,29 @@ function openDash() {
   if (rep && (!R.data || R.data.month === rep.month)) { R.data = rep; R.stale = true; renderReport(); }
   loadReport(R.data && !R.data.isCurrent ? R.data.month : '');   // current month view always follows the latest month
 }
+/* closed months are kept on this device (they do not change) – switching to them is instant */
+function repGet(m) { try { var o = JSON.parse(localStorage.getItem('rec2_rep_' + m) || 'null'); return o && o.apiVer === API_NEED ? o : null; } catch (e) { return null; } }
+function repPut(r) {
+  if (r.isCurrent) return;
+  try { localStorage.setItem('rec2_rep_' + r.month, JSON.stringify(r)); } catch (e) {
+    try { Object.keys(localStorage).filter(function (k) { return k.indexOf('rec2_rep_') === 0; }).sort().slice(0, 3).forEach(function (k) { localStorage.removeItem(k); }); } catch (e2) {}
+  }
+}
+function prefetchMonths(r) {                                   // quietly fetch the 2 latest closed months
+  (r.months || []).map(function (m) { return m[0]; }).filter(function (m) { return m !== r.month && !repGet(m); }).slice(0, 2)
+    .forEach(function (m, i) { setTimeout(function () { api('getReport', m).then(repPut).catch(function () {}); }, 1500 + i * 1500); });
+}
 function loadReport(month) {
+  var cached = month ? repGet(month) : null;
+  if (cached && (!R.data || R.data.month !== month)) {
+    if (R.data && R.data.months) cached.months = R.data.months;
+    R.data = cached; R.stale = false; $('dSync').className = 'ban info hide'; renderReport();
+    api('getReport', month).then(function (r) { repPut(r); if (R.data && R.data.month === r.month && JSON.stringify(r.rows) !== JSON.stringify(R.data.rows)) { R.data = r; renderReport(); } }).catch(function () {});
+    return;
+  }
   if (!R.data) busy(true); else { $('dSync').className = 'ban info'; $('dSync').innerHTML = ic('refresh') + ' Getting the latest figures…'; }
   api('getReport', month || '').then(function (r) {
-    busy(false); $('dSync').className = 'ban info hide'; R.data = r; R.stale = false; if (r.isCurrent) store('report', JSON.stringify(r)); renderReport();
+    busy(false); $('dSync').className = 'ban info hide'; R.data = r; R.stale = false; if (r.isCurrent) { store('report', JSON.stringify(r)); prefetchMonths(r); } else repPut(r); renderReport();
   }).catch(function (e) {
     busy(false); $('dSync').className = 'ban stale';
     $('dSync').innerHTML = R.data ? '<b>' + ic('alert') + ' Could not get the latest figures</b>Showing figures saved on this device ' + (R.data.asOn ? 'as on <b style="display:inline">' + esc(R.data.asOn) + '</b>' : '') + ' – they may be old. <button class="lnk" style="display:inline;width:auto;margin:0;padding:0 4px" onclick="loadReport(R.data && !R.data.isCurrent ? R.data.month : \'\')">Try again</button>' : esc(String(e));
@@ -1220,6 +1257,7 @@ function openOff() {
   var opts = S.meta.units.map(function (u) { return '<option' + (u.name === (S.offUnit || S.ownUnit) ? ' selected' : '') + '>' + esc(u.name) + '</option>'; }).join('');
   $('offUnitBox').innerHTML = r === 'unit' ? '' : '<div class="sec"><h4><i>' + ic('building') + '</i>Unit</h4><select id="offUnit" style="margin-top:8px" onchange="S.offUnit=this.value">' + opts + '</select><div class="hint">Used for the Unit Review Sheet and for viewing cases.</div></div>';
   $('offAdmin').classList.toggle('hide', r !== 'admin');
+  $('offWork').classList.toggle('hide', r !== 'unit');
   $('offUnitT').textContent = r === 'unit' ? S.ownUnit + ' · STO-wise' : 'Selected Unit · STO-wise';
 }
 function offUnit() { return S.role === 'unit' ? S.ownUnit : ($('offUnit') ? $('offUnit').value : S.ownUnit); }
@@ -1811,4 +1849,421 @@ function clOpen(id) {
   if (CL.cache[c.u]) return go(CL.cache[c.u]);
   busy(true);
   api('getCases', c.u, 'ALL', S.pin, S.role).then(function (data) { busy(false); CL.cache[c.u] = data; go(data); }).catch(function (e) { busy(false); toast(String(e)); });
+}
+
+/* =====================================================================
+   STAFF (STI / Clerks) & CASE ALLOCATION  – version 2.35
+   STO: My staff · Allocate cases · New month allocation · Work pending
+   Staff: own login (Unit → STO → name → PIN), sees only allocated cases
+   Unit Head: Work pending with staff (no ranking)
+   ===================================================================== */
+var DESIG = { 'State Tax Inspector': 'STI', 'Senior Clerk': 'Sr. Clerk', 'Junior Clerk': 'Jr. Clerk' };
+var DESIG_LIST = ['State Tax Inspector', 'Senior Clerk', 'Junior Clerk'];
+var TEAM_COL = ['#0B2470', '#3E63C9', '#C9993F', '#1E7A4A', '#8A3FA0', '#C24E4E', '#2A8C9A', '#7A5A1E'];
+function dShort(d) { return DESIG[d] || d; }
+function isClerk(d) { return /Clerk/.test(d || ''); }
+function inits(n) { var w = String(n || '').replace(/[^A-Za-z ]/g, ' ').trim().split(/\s+/); return ((w[0] || '?')[0] + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase(); }
+function avH(name, desig, big) { return '<span class="zav' + (desig === 'STO' ? ' g' : isClerk(desig) ? ' c' : '') + (big ? ' big' : '') + '">' + esc(inits(name)) + '</span>'; }
+function tagH(d) { return '<span class="ztag ' + (d === 'STO' ? 'g' : isClerk(d) ? 'k' : 's') + '">' + esc(dShort(d)) + '</span>'; }
+function staffList() { return (S.d && S.d.staff) || []; }
+function staffById(id) { return staffList().find(function (x) { return x.id === id; }); }
+function teamCounts() {
+  var n = {}, me = 0; (S.d.cases || []).forEach(function (c) { if (c.alloc && staffById(c.alloc)) n[c.alloc] = (n[c.alloc] || 0) + 1; else me++; });
+  return { per: n, me: me };
+}
+function colOf(id) { var i = staffList().findIndex(function (x) { return x.id === id; }); return TEAM_COL[(i < 0 ? 0 : i) % TEAM_COL.length]; }
+function refreshCases() {
+  return api('getCases', S.unit, S.sto, S.pin, 'sto').then(function (d) {
+    if (!S.staff && d.stoName) S.by = d.stoName;
+    S.d = d; cachePut(); if (S.cur) S.cur = caseById(S.cur.demandId) || S.cur; return d;
+  });
+}
+
+/* ---------- STO name (asked only once) ---------- */
+function stoMeta(unit, sto) {
+  var u = S.meta && S.meta.units.find(function (x) { return x.name === unit; });
+  return u && u.stos.find(function (x) { return x.name === sto; });
+}
+function stoNameKnown() { var s = stoMeta($('unit').value, $('sto').value); return s && s.stoName ? s.stoName : ''; }
+function byBox() {
+  var k = stoNameKnown();
+  $('byWrap').classList.toggle('hide', !!k); $('byKnown').classList.toggle('hide', !k);
+  $('byKnown').innerHTML = k ? 'Logging in as <b>' + esc(k) + '</b> · you can change your name in My staff' : '';
+}
+function metaSetName(unit, sto, name) {
+  var s = stoMeta(unit, sto); if (s) { s.stoName = name; store('meta', JSON.stringify(S.meta)); }
+}
+
+/* ---------- Staff login (nothing is stored on the device) ---------- */
+function openStaffLogin() {
+  $('sfPin').value = ''; $('sfErr').textContent = '';
+  show('sStaffLogin', { mode: 'bar', t: 'Staff Login', s: 'State Tax Inspector · Senior / Junior Clerk' });
+  $('sfUnit').value = ''; sfFill(0);
+  api('getMeta').then(function (m) { S.meta = m; store('meta', JSON.stringify(m)); if (S.screen === 'sStaffLogin') sfFill(0, true); }).catch(function () {});
+}
+function sfFill(level, keep) {
+  var m = S.meta; if (!m) return;
+  var u0 = $('sfUnit').value, s0 = $('sfSto').value, n0 = $('sfName').value;
+  if (level === 0) {
+    $('sfUnit').innerHTML = '<option value="">-- Select Unit --</option>' + m.units.map(function (u) { return '<option>' + esc(u.name) + '</option>'; }).join('');
+    if (keep) $('sfUnit').value = u0;
+  }
+  var u = m.units.find(function (x) { return x.name === $('sfUnit').value; });
+  if (level <= 1) {
+    $('sfSto').innerHTML = '<option value="">-- Select your STO --</option>' + (u ? u.stos.filter(function (s) { return (s.staff || []).length; }).map(function (s) {
+      return '<option value="' + esc(s.name) + '">' + esc(s.name + (s.stoName ? ' · ' + s.stoName : '')) + '</option>'; }).join('') : '');
+    if (keep || level === 0) $('sfSto').value = s0; if (!$('sfSto').value) $('sfSto').value = '';
+  }
+  var s = u && u.stos.find(function (x) { return x.name === $('sfSto').value; });
+  $('sfName').innerHTML = '<option value="">-- Select your name --</option>' + (s ? s.staff.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.name + ' · ' + dShort(x.desig)) + '</option>'; }).join('') : '');
+  if (keep) $('sfName').value = n0; if (!$('sfName').value) $('sfName').value = '';
+  $('sfHint').textContent = u && !u.stos.some(function (x) { return (x.staff || []).length; }) ? 'No staff has been added in this Unit yet. Your STO adds you in "My staff".' :
+    s ? 'Names added by ' + s.name + ' in "My staff".' : '';
+}
+function loginStaff() {
+  var u = $('sfUnit').value, s = $('sfSto').value, id = $('sfName').value, pin = $('sfPin').value.trim(), e = $('sfErr'); e.textContent = '';
+  if (!u || !s) { e.textContent = 'Please select the Unit and your STO.'; return; }
+  if (!id) { e.textContent = 'Please select your name.'; return; }
+  if (!/^\d{4}$/.test(pin)) { e.textContent = 'Please enter your 4-digit PIN.'; return; }
+  busy(true);
+  api('getCases', u, s, pin, 'staff|' + id).then(function (d) {
+    busy(false); $('sfPin').value = ''; $('sfName').value = '';
+    S.role = 'sto'; S.unit = u; S.sto = s; S.pin = pin; S.staff = d.staffMe; S.by = d.staffMe.label; S.d = d; S.rep = null; S.stack = [];
+    goHome();
+  }).catch(function (x) { busy(false); e.textContent = x; });
+}
+
+/* ---------- STO home: team card ---------- */
+function renderTeamCard() {
+  var el = $('teamCard');
+  if (S.staff || !S.d || !S.d.staff) { el.classList.add('hide'); return; }
+  el.classList.remove('hide'); el.className = 'zcard';
+  var st = staffList();
+  if (!st.length) {
+    el.innerHTML = '<h4>' + ic('users') + ' My staff &amp; case allocation</h4><p>Add your STI and clerks, give each a PIN and allocate cases. Each one logs in with own PIN and sees only the cases you give.</p>' +
+      '<div class="zb2"><button class="btn" onclick="openStaff()">' + ic('plus') + ' Add my staff</button></div>';
+    return;
+  }
+  var t = teamCounts(), n = S.d.cases.length || 1;
+  var seg = st.map(function (x) { return '<i style="width:' + ((t.per[x.id] || 0) * 100 / n) + '%;background:' + colOf(x.id) + '"></i>'; }).join('') + '<i style="width:' + (t.me * 100 / n) + '%;background:#D8D2C2"></i>';
+  el.innerHTML = '<h4>' + ic('users') + ' My staff &amp; case allocation</h4><p>' + st.length + ' staff · ' + S.d.cases.length + ' cases · ' + t.me + ' with you</p>' +
+    (S.d.newMonth ? '<div class="znm" onclick="openNewMon()"><b>' + ic('calendar') + ' New month – decide ' + esc(S.d.monthLabel) + ' allocation</b><span>›</span></div>' : '') +
+    '<div class="zbar">' + seg + '</div><div class="zlg">' + st.map(function (x) { return '<span style="--c:' + colOf(x.id) + '">' + esc(x.name) + ' ' + (t.per[x.id] || 0) + '</span>'; }).join('') + '<span style="--c:#D8D2C2">With me ' + t.me + '</span></div>' +
+    '<div class="zb3"><button class="btn sec2" onclick="openStaff()">' + ic('users') + ' My staff</button><button class="btn" onclick="openAlloc(\'none\')">' + ic('list') + ' Allocate</button><button class="btn sec2" onclick="openWork(\'sto\')">' + ic('clock') + ' Work pending</button></div>';
+}
+
+/* ---------- My staff ---------- */
+var STF = { edit: false, list: [], saved: [], nameEdit: false };
+function openStaff() {
+  busy(true);
+  api('getStaff', S.unit, S.sto, S.pin).then(function (r) {
+    busy(false); STF.saved = r.staff; STF.list = r.staff.map(function (x) { return Object.assign({}, x); }); STF.edit = !r.staff.length; STF.nameEdit = false; STF.err = '';
+    if (r.stoName) S.by = r.stoName;
+    show('sStaff', { mode: 'bar', t: 'My staff', s: S.unit + ' · ' + S.sto + ' · ' + S.by });
+    renderStaff();
+  }).catch(function (e) { busy(false); toast(String(e)); });
+}
+function stfCases(id) { return (S.d.cases || []).filter(function (c) { return c.alloc === id; }).length; }
+function renderStaff() {
+  var h = '<div class="zsto">' + avH(S.by, 'STO', 1) + '<div class="x">' + (STF.nameEdit ?
+      '<input id="stoNm" value="' + esc(S.by) + '" maxlength="60"><div class="zrow"><button class="btn sec2" onclick="STF.nameEdit=false;renderStaff()">Cancel</button><button class="btn" onclick="saveStoName()">Save name</button></div>' :
+      '<b>' + esc(S.by) + ' ' + tagH('STO') + '</b><span>' + esc(S.sto) + ' · your name (shown to staff &amp; officers)</span>') + '</div>' +
+    (STF.nameEdit ? '' : '<button class="zlnk" onclick="STF.nameEdit=true;renderStaff()">' + ic('edit') + ' Change name</button>') + '</div>';
+  var t = teamCounts();
+  if (!STF.edit) {
+    h += '<div class="zlock"><span class="ib sm">' + ic('lock') + '</span><div><b>Staff list locked</b><span>Stays the same until you change it</span></div><button class="btn sec2" onclick="STF.edit=true;renderStaff()">' + ic('edit') + ' Edit</button></div>' +
+      '<div class="ban"><b>' + S.d.cases.length + ' cases · ' + (S.d.cases.length - t.me) + ' allocated · ' + t.me + ' with you</b>Each case is handled by one person; their entries are saved in their name. You can still work on every case yourself.</div>' +
+      STF.saved.map(function (x) {
+        return '<div class="zstf" onclick="openAlloc(\'' + esc(x.id) + '\')">' + avH(x.name, x.desig) + '<div class="x"><b>' + esc(x.name) + ' ' + tagH(x.desig) + '</b><span>' + esc(x.desig) + ' · PIN ••••</span></div><div class="n"><b>' + (t.per[x.id] || 0) + '</b><span>cases ›</span></div></div>';
+      }).join('') +
+      '<div class="zrow" style="margin:14px 14px 0"><button class="btn" onclick="openAlloc(\'none\')">' + ic('list') + ' Allocate cases</button><button class="btn sec2" onclick="openWork(\'sto\')">' + ic('clock') + ' Work pending</button></div>' +
+      '<div class="hint" style="margin:12px 16px">Staff log in from <b>Staff Login</b> on the opening screen: Unit → your STO series → their name → their PIN.</div>';
+  } else {
+    h += '<div class="ban" style="margin-top:10px"><b>' + (STF.saved.length ? 'Editing staff list' : 'Add your staff') + '</b>Add or remove your STIs and clerks and set each one\'s 4-digit PIN. Tap <b style="display:inline">Save &amp; lock</b> when done.</div>' +
+      STF.list.map(function (x, i) {
+        var n = x.id ? stfCases(x.id) : 0;
+        return '<div class="zer"><div class="t">' + avH(x.name || '?', x.desig) + '<b>' + (x.id ? n + ' case' + (n === 1 ? '' : 's') : 'New') + '</b><a class="rm" onclick="stfRemove(' + i + ')">✕ Remove</a></div>' + stfFields('s' + i, x, i) + '</div>';
+      }).join('') +
+      '<div class="zadd"><h5>+ Add staff</h5>' + stfFields('n', { name: '', desig: '', pin: '' }) + '<button class="btn sec2" style="margin-top:10px" onclick="stfAdd()">Add</button></div>' +
+      '<div id="stfErr" class="err" style="margin:10px 16px">' + esc(STF.err || '') + '</div>' +
+      '<div class="savebar"><button class="btn sec2" onclick="stfCancel()">Cancel</button><button class="btn" onclick="saveStaffList()">' + ic('lock') + ' Save &amp; lock</button></div>';
+  }
+  $('sStaff').innerHTML = h;
+}
+function stfFields(p, x, i) {
+  var on = i == null ? '' : ' oninput="stfSet(' + i + ',this)" onchange="stfSet(' + i + ',this)"';
+  return '<div class="zg3"><div><label>Name</label><input id="' + p + 'N" data-k="name" value="' + esc(x.name) + '" placeholder="e.g. A. K. Joshi" maxlength="60"' + on + '></div>' +
+    '<div><label>Designation</label><select id="' + p + 'D" data-k="desig"' + on + '><option value="">— Select —</option>' + DESIG_LIST.map(function (d) { return '<option' + (x.desig === d ? ' selected' : '') + '>' + d + '</option>'; }).join('') + '</select></div>' +
+    '<div><label>PIN</label><input id="' + p + 'P" data-k="pin" value="' + esc(x.pin) + '" inputmode="numeric" maxlength="4" placeholder="4 digits"' + on + '></div></div>';
+}
+function stfSet(i, el) { STF.list[i][el.getAttribute('data-k')] = el.value; }
+function stfAdd() {
+  var x = { name: $('nN').value.trim(), desig: $('nD').value, pin: $('nP').value.trim() };
+  STF.err = '';
+  if (x.name.length < 3) STF.err = 'Please enter the name.';
+  else if (!x.desig) STF.err = 'Please select the designation.';
+  else if (!/^\d{4}$/.test(x.pin)) STF.err = 'PIN must be 4 digits.';
+  if (!STF.err) STF.list.push(x);
+  renderStaff();
+}
+function stfRemove(i) {
+  var x = STF.list[i], n = x.id ? stfCases(x.id) : 0;
+  if (n && !confirm('Remove ' + (x.name || 'this staff member') + '?\nHis / her ' + n + ' case' + (n === 1 ? '' : 's') + ' will come back to you (STO) when you Save & lock.')) return;
+  STF.list.splice(i, 1); renderStaff();
+}
+function stfCancel() {
+  if (!STF.saved.length) { goBack(); return; }
+  STF.list = STF.saved.map(function (x) { return Object.assign({}, x); }); STF.edit = false; STF.err = ''; renderStaff();
+}
+function saveStaffList() {
+  var e = '';
+  STF.list.forEach(function (x, i) {
+    if (e) return; var w = (x.name || 'Staff ' + (i + 1)) + ': ';
+    if (String(x.name || '').trim().length < 3) e = 'Staff ' + (i + 1) + ': please enter the name.';
+    else if (!x.desig) e = w + 'please select the designation.';
+    else if (!/^\d{4}$/.test(String(x.pin || '').trim())) e = w + 'PIN must be 4 digits.';
+  });
+  if (!e && $('nN') && $('nN').value.trim()) e = 'You typed a new name under "Add staff" – tap Add first (or clear it).';
+  if (e) { STF.err = e; renderStaff(); return; }
+  busy(true);
+  api('saveStaff', { unit: S.unit, sto: S.sto, pin: S.pin, staff: STF.list }).then(function (r) {
+    STF.saved = r.staff; STF.list = r.staff.map(function (x) { return Object.assign({}, x); }); STF.edit = false; STF.err = '';
+    return refreshCases();
+  }).then(function () { busy(false); renderStaff(); toast('Staff list saved & locked ✓'); })
+    .catch(function (x) { busy(false); STF.err = String(x); renderStaff(); });
+}
+function saveStoName() {
+  var n = $('stoNm').value.replace(/\s+/g, ' ').trim();
+  if (n.length < 3) { toast('Please enter your name.'); return; }
+  busy(true);
+  api('setStoName', S.unit, S.sto, S.pin, n).then(function (r) {
+    busy(false); S.by = r.name; if (S.d) S.d.stoName = r.name; metaSetName(S.unit, S.sto, r.name); cachePut();
+    STF.nameEdit = false; S.head.s = S.unit + ' · ' + S.sto + ' · ' + S.by; setHead(S.head); renderStaff(); toast('Name saved ✓');
+  }).catch(function (e) { busy(false); toast(String(e)); });
+}
+
+/* ---------- Allocate cases ---------- */
+var ALC = { tab: 'none', sel: {}, q: '', cat: 'all', sec: 'all', sort: 'amt', newIds: null };
+function openAlloc(tab) {
+  if (!staffList().length) { toast('Add your staff first.'); openStaff(); return; }
+  ALC.tab = tab || 'none'; ALC.sel = {}; ALC.q = ''; ALC.cat = 'all'; ALC.sec = 'all';
+  show('sAlloc', { mode: 'bar', t: 'Allocate cases', s: S.unit + ' · ' + S.sto + ' · ' + S.by });
+  var secs = {}; S.d.cases.forEach(function (c) { if (c.section) secs[c.section] = 1; });
+  $('sAlloc').innerHTML = '<div class="pills" id="alPills"></div><div id="alHead"></div>' +
+    '<div class="zflt"><select onchange="ALC.cat=this.value;renderAlloc()"><option value="all">All categories</option>' + (S.meta.categories || []).map(function (c) { return '<option value="' + esc(c) + '">' + esc(CAT_SHORT[c] || c) + '</option>'; }).join('') + '<option value="">Not decided</option></select>' +
+    '<select onchange="ALC.sec=this.value;renderAlloc()"><option value="all">All sections</option>' + Object.keys(secs).sort().map(function (s) { return '<option value="' + esc(s) + '">Sec ' + esc(s) + '</option>'; }).join('') + '</select>' +
+    '<select onchange="ALC.sort=this.value;renderAlloc()"><option value="amt">Highest amount</option><option value="low">Lowest amount</option><option value="name">Name A–Z</option></select></div>' +
+    '<div class="srch"><input type="search" placeholder="Search taxpayer, GSTIN or Demand ID" oninput="ALC.q=this.value;renderAlloc()"></div>' +
+    '<div id="alSelAll" class="zsa"></div><div id="alList"></div><div style="height:150px"></div><div id="alBar" class="zasb hide"></div>';
+  renderAlloc();
+}
+function alTabCases(tab) {
+  var cs = S.d.cases;
+  if (tab === 'none') return cs.filter(function (c) { return !c.alloc || !staffById(c.alloc); });
+  if (tab === 'new') { var k = {}; (ALC.newIds || []).forEach(function (i) { k[i] = 1; }); return cs.filter(function (c) { return k[c.demandId]; }); }
+  if (tab === 'all') return cs.slice();
+  return cs.filter(function (c) { return c.alloc === tab; });
+}
+function alShown() {
+  var q = ALC.q.trim().toLowerCase();
+  var list = alTabCases(ALC.tab).filter(function (c) {
+    if (ALC.cat !== 'all' && (c.cat || '') !== ALC.cat) return false;
+    if (ALC.sec !== 'all' && String(c.section) !== ALC.sec) return false;
+    return !q || (c.name + ' ' + c.gstin + ' ' + c.demandId).toLowerCase().indexOf(q) >= 0;
+  });
+  list.sort(ALC.sort === 'name' ? function (a, b) { return String(a.name).localeCompare(String(b.name)); } : ALC.sort === 'low' ? function (a, b) { return a.balance - b.balance; } : function (a, b) { return b.balance - a.balance; });
+  return list;
+}
+function renderAlloc() {
+  if (!$('alList')) return;
+  var t = teamCounts(), st = staffList();
+  if (ALC.tab !== 'none' && ALC.tab !== 'all' && ALC.tab !== 'new' && !staffById(ALC.tab)) ALC.tab = 'none';
+  var P = function (k, l, n) { return '<button class="pill' + (ALC.tab === k ? ' on' : '') + '" onclick="ALC.tab=\'' + esc(k) + '\';ALC.sel={};renderAlloc()">' + esc(l) + ' ' + n + '</button>'; };
+  $('alPills').innerHTML = P('none', 'Not allocated', t.me) + (ALC.newIds && ALC.newIds.length ? P('new', 'New this month', ALC.newIds.length) : '') +
+    st.map(function (x) { return P(x.id, x.name, t.per[x.id] || 0); }).join('') + P('all', 'All', S.d.cases.length);
+  var sx = staffById(ALC.tab);
+  $('alHead').innerHTML = sx ? '<div class="zwho">' + avH(sx.name, sx.desig) + '<div><b>' + esc(sx.name) + ' · ' + esc(dShort(sx.desig)) + '</b><span>' + (t.per[sx.id] || 0) + ' cases · &#8377;' + short(alTabCases(sx.id).reduce(function (a, c) { return a + c.balance; }, 0)) + ' balance pending</span></div></div>' :
+    (ALC.tab === 'none' || ALC.tab === 'new') && alShown().length ? '<div class="zqs"><div><b>Quick share</b><span>Share these cases equally by number of cases</span></div><button class="btn sec2" onclick="qsOpen()">' + ic('users') + ' Quick share</button></div>' : '';
+  var list = alShown(), nSel = Object.keys(ALC.sel).length;
+  $('alSelAll').innerHTML = list.length ? '<a onclick="alSelAll(1)">Select all ' + list.length + ' shown</a> · <a onclick="alSelAll(0)">Clear</a>' : '';
+  $('alList').innerHTML = list.length ? list.slice(0, 400).map(function (c) {
+    var on = !!ALC.sel[c.demandId], who = c.alloc && staffById(c.alloc);
+    return '<div class="zal' + (on ? ' on' : '') + '" onclick="alTog(\'' + esc(c.demandId) + '\')"><span class="zchk' + (on ? ' on' : '') + '">' + (on ? '✓' : '') + '</span><div class="x"><b>' + esc(c.name) + '</b>' + idLine(c) +
+      '<span class="zto' + (who ? '' : ' n') + '">' + (c.cat && c.cat !== 'Recoverable' ? esc(CAT_SHORT[c.cat] || c.cat) + ' · ' : !c.cat ? 'Category not decided · ' : '') + (who ? esc(who.name) + ' (' + esc(dShort(who.desig)) + ')' : 'With STO (not allocated)') + '</span></div><span class="amt">&#8377;' + short(c.balance) + '</span></div>';
+  }).join('') + (list.length > 400 ? '<div class="hint" style="margin:10px 16px">Showing 400 of ' + list.length + ' – use the filters or search.</div>' : '') :
+    '<div class="empty">' + (ALC.tab === 'none' ? 'All cases are allocated ✓' : 'No cases here.') + '</div>';
+  alBar();
+}
+function alTog(id) { if (ALC.sel[id]) delete ALC.sel[id]; else ALC.sel[id] = 1; renderAlloc(); }
+function alSelAll(on) { ALC.sel = {}; if (on) alShown().slice(0, 400).forEach(function (c) { ALC.sel[c.demandId] = 1; }); renderAlloc(); }
+function alBar() {
+  var ids = Object.keys(ALC.sel), b = $('alBar');
+  if (!ids.length) { b.classList.add('hide'); return; }
+  var amt = 0, anyAl = false; ids.forEach(function (i) { var c = caseById(i); if (c) { amt += c.balance; if (c.alloc) anyAl = true; } });
+  var n = ids.length + ' case' + (ids.length === 1 ? '' : 's');
+  b.classList.remove('hide');
+  b.innerHTML = '<div class="cnt"><b>' + n + ' selected</b> · &#8377;' + short(amt) + '</div><div class="zrow">' +
+    (anyAl ? '<button class="btn sec2" onclick="alTakeBack()">↩ Take back</button>' : '') +
+    '<button class="btn" onclick="alPick()">' + (anyAl ? 'Move to… ›' : 'Allocate ' + n + ' to… ›') + '</button></div>';
+}
+function alPick() {
+  var ids = Object.keys(ALC.sel), amt = 0; ids.forEach(function (i) { var c = caseById(i); if (c) amt += c.balance; });
+  pickPerson('Allocate ' + ids.length + ' case' + (ids.length === 1 ? '' : 's') + ' (₹' + short(amt) + ') to', 'Each case goes to one person only', '', false, function (to) {
+    var a = {}; ids.forEach(function (i) { a[i] = to; }); doAssign(a, to);
+  });
+}
+function alTakeBack() {
+  var ids = Object.keys(ALC.sel).filter(function (i) { var c = caseById(i); return c && c.alloc; });
+  if (!confirm('Take back ' + ids.length + ' case' + (ids.length === 1 ? '' : 's') + ' to yourself (STO)?')) return;
+  var a = {}; ids.forEach(function (i) { a[i] = ''; }); doAssign(a, '');
+}
+function doAssign(a, to) {
+  var n = Object.keys(a).length; busy(true);
+  api('allocate', { unit: S.unit, sto: S.sto, pin: S.pin, assign: a }).then(function () { return refreshCases(); }).then(function () {
+    busy(false); ALC.sel = {}; var x = to && staffById(to);
+    toast('✓ ' + n + ' case' + (n === 1 ? '' : 's') + (x ? ' allocated to ' + x.name : ' with you (STO)'));
+    if (S.screen === 'sAlloc') renderAlloc(); else if (S.screen === 'sCase' && S.cur) openCase(S.cur.demandId, true);
+  }).catch(function (e) { busy(false); toast(String(e)); });
+}
+/** Bottom sheet to choose a staff member. withSto: also "Keep with me (STO)". cb(staffId | '') */
+function pickPerson(title, sub, cur, withSto, cb) {
+  var t = teamCounts(), sel = cur || '';
+  var ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'pickOv';
+  var opt = function (id, name, desig, n) {
+    return '<div class="zop' + (id === sel ? ' on' : '') + '" data-id="' + esc(id) + '" onclick="pickSel(this)"><span class="zrd"></span>' + avH(name, desig) + '<div class="x"><b>' + esc(name) + '</b><span>' + esc(desig === 'STO' ? 'STO (keep with me)' : desig) + '</span></div><div class="r"><b>' + n + '</b>cases now</div></div>'; };
+  ov.innerHTML = '<div class="sheet"><div class="grab"></div><b class="zst">' + esc(title) + '</b><div class="zss">' + esc(sub) + '</div><div class="zops">' +
+    (withSto ? opt('', S.by, 'STO', t.me) : '') + staffList().map(function (x) { return opt(x.id, x.name, x.desig, t.per[x.id] || 0); }).join('') + '</div>' +
+    '<div class="two"><button class="btn sec2" onclick="pickClose()">Cancel</button><button class="btn" id="pickGo">Allocate</button></div></div>';
+  ov.onclick = function (e) { if (e.target === ov) pickClose(); };
+  document.body.appendChild(ov);
+  var go = function () { var o = ov.querySelector('.zop.on'); $('pickGo').classList.toggle('dis', !o); $('pickGo').textContent = !o ? 'Select a person' : o.getAttribute('data-id') ? 'Allocate to ' + o.querySelector('b').textContent : 'Keep with me (STO)'; };
+  pickSel.go = go; go();
+  $('pickGo').onclick = function () { var o = ov.querySelector('.zop.on'); if (!o) return; var id = o.getAttribute('data-id'); if (id === (cur || '') && cur != null && withSto) { pickClose(); return; } pickClose(); cb(id); };
+}
+function pickSel(el) { [].forEach.call(document.querySelectorAll('#pickOv .zop'), function (x) { x.classList.toggle('on', x === el); }); pickSel.go(); }
+function pickClose() { var o = $('pickOv'); if (o) o.remove(); }
+
+/* Quick share – equally by number of cases (highest amount first, one by one) */
+function qsCases() {
+  var ids = Object.keys(ALC.sel), list = ids.length ? ids.map(caseById).filter(function (c) { return c && !c.alloc; }) : alShown().filter(function (c) { return !c.alloc; });
+  return list.sort(function (a, b) { return b.balance - a.balance; });
+}
+function qsOpen() {
+  var list = qsCases(); if (!list.length) { toast('No cases to share.'); return; }
+  QS = { on: {} }; staffList().forEach(function (x) { QS.on[x.id] = 1; });
+  var ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'pickOv'; ov.onclick = function (e) { if (e.target === ov) pickClose(); };
+  document.body.appendChild(ov); qsRender();
+}
+var QS = { on: {} };
+function qsRender() {
+  var list = qsCases(), who = staffList().filter(function (x) { return QS.on[x.id]; }), k = who.length, n = list.length, t = teamCounts();
+  var each = k ? Math.floor(n / k) : 0, extra = k ? n % k : 0;
+  $('pickOv').innerHTML = '<div class="sheet"><div class="grab"></div><b class="zst">Quick share · ' + n + ' case' + (n === 1 ? '' : 's') + '</b><div class="zss">Shared equally by number of cases · tick who should get cases</div><div class="zops">' +
+    staffList().map(function (x, i) {
+      var j = who.indexOf(x), add = j < 0 ? 0 : each + (j < extra ? 1 : 0), now = t.per[x.id] || 0;
+      return '<div class="zop' + (QS.on[x.id] ? ' on' : '') + '" onclick="QS.on[\'' + esc(x.id) + '\']=!QS.on[\'' + esc(x.id) + '\'];qsRender()"><span class="zchk' + (QS.on[x.id] ? ' on' : '') + '">' + (QS.on[x.id] ? '✓' : '') + '</span>' + avH(x.name, x.desig) + '<div class="x"><b>' + esc(x.name) + '</b><span>' + esc(x.desig) + '</span></div><div class="r"><b>' + (add ? '+' + add : '–') + '</b>' + now + (add ? ' → ' + (now + add) : '') + '</div></div>';
+    }).join('') + '</div>' +
+    '<div class="hint" style="margin-top:8px">' + (k ? n + ' ÷ ' + k + ' = ' + each + ' each' + (extra ? ', ' + extra + (extra === 1 ? ' extra goes' : ' extra go') + ' one by one from the top' : '') + '. Highest amount first, given in turn. You can still move any case afterwards.' : 'Tick at least one person.') + '</div>' +
+    '<div class="two"><button class="btn sec2" onclick="pickClose()">Cancel</button><button class="btn' + (k ? '' : ' dis') + '" onclick="qsGo()">Share ' + n + ' case' + (n === 1 ? '' : 's') + '</button></div></div>';
+}
+function qsGo() {
+  var list = qsCases(), who = staffList().filter(function (x) { return QS.on[x.id]; }); if (!who.length) return;
+  var a = {}; list.forEach(function (c, i) { a[c.demandId] = who[i % who.length].id; });
+  pickClose(); doAssign(a, '');
+}
+
+/* ---------- Case details: who has the case ---------- */
+function renderHubAlloc(c, h) {
+  var el = $('hubAlloc'), st = staffList(), who = c.alloc && (staffById(c.alloc) || { name: c.allocName, desig: '' });
+  if (S.role !== 'sto' && !c.allocName) { el.classList.add('hide'); return; }
+  if (S.role === 'sto' && !S.staff && !st.length) { el.classList.add('hide'); return; }
+  el.className = 'zalc';
+  var btn = S.role === 'sto' && !S.staff ? '<button class="zlnk" onclick="hubRealloc()">' + (who ? 'Change' : 'Allocate') + '</button>' : '';
+  var hist = h && h.allocs && h.allocs.length ? '<div class="zah">' + h.allocs.slice(0, 4).map(function (a) {
+    return '<div>' + esc(a.from) + ' → <b>' + esc(a.to) + '</b><i>' + esc(dmy(a.on.slice(0, 10)) + ' ' + a.on.slice(11)) + ' · by ' + esc(a.by) + '</i></div>'; }).join('') + '</div>' : '';
+  el.innerHTML = '<div class="t">' + (who ? avH(who.name, who.desig) : avH(c.sto, 'STO')) + '<div class="x"><small>' + (S.staff ? 'Allocated to you' : 'Allocated to') + '</small><b>' +
+    (who ? esc(who.name) + (who.desig ? ' · ' + esc(dShort(who.desig)) : '') : 'STO (not allocated)') + '</b><span>' + (S.staff ? 'by your STO · ' + esc(S.sto) : 'The STO can also make entries in this case') + '</span></div>' + btn + '</div>' + hist;
+}
+function hubRealloc() {
+  var c = S.cur;
+  pickPerson(c.name, 'Who should handle this case?', c.alloc || '', true, function (to) { var a = {}; a[c.demandId] = to; doAssign(a, to); });
+}
+
+/* ---------- New month: allocation decision ---------- */
+var NM = { cont: 'keep', nw: 'share', share: {} };
+function openNewMon() {
+  if (!S.d || !S.d.newMonth) { goHome(); return; }
+  S.nmSeen = true; NM = { cont: 'keep', nw: S.d.newMonth.nw ? 'share' : 'keep', share: {} }; staffList().forEach(function (x) { NM.share[x.id] = 1; });
+  show('sNewMon', { mode: 'bar', t: S.unit + ' · ' + S.sto, s: S.by + ' · ' + S.d.monthLabel });
+  renderNewMon();
+}
+function renderNewMon() {
+  var m = S.d.newMonth, st = staffList(), who = st.filter(function (x) { return NM.share[x.id]; }), k = who.length;
+  var each = k ? Math.floor(m.nw / k) : 0, ex = k ? m.nw % k : 0, split = who.map(function (x, j) { return each + (j < ex ? 1 : 0); }).join(' · ');
+  var op = function (grp, v, t, s) { return '<div class="zop' + (NM[grp] === v ? ' on' : '') + '" onclick="NM.' + grp + '=\'' + v + '\';renderNewMon()"><span class="zrd"></span><div class="x"><b>' + t + '</b><span>' + s + '</span></div></div>'; };
+  $('sNewMon').innerHTML = '<div class="ban" style="margin-top:12px"><b>New month: ' + esc(S.d.monthLabel) + ' list uploaded</b>Decide how your ' + S.d.cases.length + ' cases should be allocated this month.</div>' +
+    '<div class="zcard"><h4>' + m.cont + ' case' + (m.cont === 1 ? '' : 's') + ' continue from ' + esc(m.prev) + '</h4><p>' + m.contAlloc + ' of them are with your staff</p>' +
+    (m.contAlloc ? '<div class="zlg" style="margin-top:8px">' + st.map(function (x) { return '<span style="--c:' + colOf(x.id) + '">' + esc(x.name) + ' ' + (m.per[x.id] || 0) + '</span>'; }).join('') + '</div>' : '') +
+    op('cont', 'keep', 'Keep ' + esc(m.prev) + ' allocation', 'Each case stays with the same person') + op('cont', 'change', 'Change allocation', 'Start from ' + esc(m.prev) + ' allocation and edit') + '</div>' +
+    '<div class="zcard"><h4>' + m.nw + ' new case' + (m.nw === 1 ? '' : 's') + ' in ' + esc(S.d.monthLabel) + '</h4><p>' + (m.nw ? 'Not in last month\'s list · &#8377;' + short(m.nwAmt) : 'No new cases this month') + '</p>' +
+    (m.nw ? op('nw', 'share', 'Quick share', k ? 'Equally by number: ' + split + ' between ' + k + ' staff' : 'Tick at least one person below') +
+      (NM.nw === 'share' ? '<div class="zchips">' + st.map(function (x) { return '<span class="' + (NM.share[x.id] ? 'on' : '') + '" onclick="NM.share[\'' + esc(x.id) + '\']=!NM.share[\'' + esc(x.id) + '\'];renderNewMon()">' + (NM.share[x.id] ? '☑ ' : '☐ ') + esc(x.name) + '</span>'; }).join('') + '</div>' : '') +
+      op('nw', 'self', 'Allocate myself', 'Open Allocate cases with the ' + m.nw + ' new cases') + op('nw', 'keep', 'Keep with me for now', 'Allocate later') : '') + '</div>' +
+    '<div class="hint" style="margin:8px 16px 0">Cases closed / not in the ' + esc(S.d.monthLabel) + ' list are removed from staff automatically.</div>' +
+    '<div class="zrow" style="margin:14px 14px 24px"><button class="btn sec2" onclick="goBack()">Later</button><button class="btn" onclick="confirmNewMon()">Confirm ' + esc(S.d.monthLabel) + ' allocation</button></div>';
+}
+function confirmNewMon() {
+  var share = NM.nw === 'share' ? staffList().filter(function (x) { return NM.share[x.id]; }).map(function (x) { return x.id; }) : [];
+  if (NM.nw === 'share' && S.d.newMonth.nw && !share.length) { toast('Tick at least one person for Quick share.'); return; }
+  busy(true);
+  api('confirmAllocMonth', { unit: S.unit, sto: S.sto, pin: S.pin, share: share }).then(function (r) {
+    ALC.newIds = r.newIds; return refreshCases().then(function () { return r; });
+  }).then(function (r) {
+    busy(false); toast('✓ ' + S.d.monthLabel + ' allocation confirmed' + (r.shared ? ' · ' + r.shared + ' new cases shared' : ''));
+    S.stack = [{ id: 'sStart', head: { mode: 'hero', t: 'Recovery – ' + S.meta.division, s: 'Choose how you want to open the app' } }];
+    if (NM.nw === 'self' && r.newIds.length) { goHome(); openAlloc('new'); }
+    else if (NM.cont === 'change') { goHome(); openAlloc('all'); }
+    else goHome();
+  }).catch(function (e) { busy(false); toast(String(e)); });
+}
+
+/* ---------- Work pending with staff (STO: own staff · Unit Head: own Unit) ---------- */
+var WK = { d: null, sto: 'all', open: {}, mode: 'sto' };
+function openWork(mode) {
+  busy(true); WK.mode = mode; WK.open = {}; WK.sto = 'all';
+  var p = mode === 'unit' ? api('getStaffWork', 'unit', S.ownUnit, '', S.pin) : api('getStaffWork', 'sto', S.unit, S.sto, S.pin);
+  p.then(function (d) {
+    busy(false); WK.d = d;
+    show('sWork', { mode: 'bar', t: 'Work pending with staff', s: d.unit + (mode === 'sto' ? ' · ' + S.sto : ' · Unit Head') + ' · ' + d.monthLabel });
+    renderWork();
+  }).catch(function (e) { busy(false); toast(String(e)); });
+}
+function wkCls(p) { return p <= 25 ? 'zok' : p <= 50 ? 'zmd' : 'zlo'; }
+function renderWork() {
+  var d = WK.d, groups = d.stos.filter(function (g) { return g.staff.length; }), none = d.stos.filter(function (g) { return !g.staff.length; });
+  var h = '';
+  if (WK.mode === 'unit' && groups.length > 1) h += '<div class="pills">' + ['all'].concat(groups.map(function (g) { return g.sto; })).map(function (k) {
+    return '<button class="pill' + (WK.sto === k ? ' on' : '') + '" onclick="WK.sto=\'' + esc(k) + '\';renderWork()">' + (k === 'all' ? 'All STOs' : esc(k)) + '</button>'; }).join('') + '</div>';
+  if (!groups.length) h += '<div class="empty">' + (WK.mode === 'sto' ? 'No staff added yet. Add them in My staff.' : 'No STO of this Unit has added staff yet.') + '</div>';
+  groups.filter(function (g) { return WK.sto === 'all' || g.sto === WK.sto; }).forEach(function (g) {
+    var A = 0, P = 0; g.staff.forEach(function (s) { A += s.allocated; P += s.pending; });
+    h += '<div class="zwg"><div class="zwh"><b>' + esc(g.sto) + (g.stoName ? ' · ' + esc(g.stoName) : '') + '</b><span>' + g.withSto + ' case' + (g.withSto === 1 ? '' : 's') + ' with STO (not allocated)</span></div>' +
+      '<div class="zwt"><table><tr><th>Staff</th><th>Alloc.</th><th>Pend.</th><th>%</th><th>Ledger</th><th>Action</th><th>Cat.</th></tr>' +
+      g.staff.map(function (s) {
+        var k = g.sto + '|' + s.id, op = WK.open[k];
+        return '<tr class="zr' + (op ? ' zopn' : '') + '" onclick="WK.open[\'' + esc(k) + '\']=!WK.open[\'' + esc(k) + '\'];renderWork()"><td>' + esc(s.name) + ' ' + tagH(s.desig) + ' <span class="zarr">' + (op ? '▴' : '▾') + '</span></td><td>' + s.allocated + '</td><td>' + s.pending + '</td><td><span class="zp ' + wkCls(s.pct) + '">' + (s.allocated ? s.pct + '%' : '–') + '</span></td><td>' + (s.led || 0) + '</td><td>' + (s.actCounts ? s.act : '–') + '</td><td>' + s.cat + '</td></tr>';
+      }).join('') +
+      '<tr class="tot"><td>' + esc(g.sto) + ' staff</td><td>' + A + '</td><td>' + P + '</td><td><span class="zp ' + wkCls(A ? P * 100 / A : 0) + '">' + (A ? Math.round(P * 100 / A) + '%' : '–') + '</span></td><td colspan="3"></td></tr></table></div>' +
+      g.staff.filter(function (s) { return WK.open[g.sto + '|' + s.id]; }).map(function (s) {
+        return '<div class="zpl"><div class="zplh">' + avH(s.name, s.desig) + '<b>' + esc(s.name) + ' · ' + s.pending + ' pending of ' + s.allocated + '</b><a onclick="WK.open[\'' + esc(g.sto + '|' + s.id) + '\']=false;renderWork()">✕</a></div>' +
+          (s.list.length ? s.list.map(function (c) {
+            var can = WK.mode === 'sto' && caseById(c.id);
+            return '<div class="zpc"' + (can ? ' onclick="openCase(\'' + esc(c.id) + '\')"' : '') + '><div><b>' + esc(c.n) + '</b><small>' + esc(c.id) + ' · Bal &#8377;' + short(c.b) + '</small></div><div class="zw">' +
+              (c.w.indexOf('L') >= 0 ? '<span>Ledger</span>' : '') + (c.w.indexOf('A') >= 0 ? '<span>Action</span>' : '') + (c.w.indexOf('C') >= 0 ? '<span>Category</span>' : '') + '</div></div>'; }).join('') : '<div class="hint">Nothing pending ✓</div>') + '</div>';
+      }).join('') + '</div>';
+  });
+  if (WK.mode === 'unit' && none.length && groups.length) h += '<div class="hint" style="margin:10px 16px 0">No staff added by: ' + none.map(function (g) { return esc(g.sto); }).join(', ') + '</div>';
+  h += '<div class="zlegend"><b>Pending</b> = an allocated case with any of: ledger not checked in ' + d.freshDays + ' days · no action this month (STI only – clerks show –) · category not confirmed' + (d.locked ? ' (categories are final this month)' : '') + '.<br>Tap a name to see the pending cases. No ranking – staff are listed STO-wise.' +
+    '<br><span class="zp zok">≤ 25%</span> <span class="zp zmd">≤ 50%</span> <span class="zp zlo">above 50%</span></div>';
+  $('sWork').innerHTML = h;
 }

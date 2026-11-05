@@ -43,6 +43,7 @@
   <div class="lux-list">
     <button class="lux" onclick="openDash()"><span class="ib"><svg><use href="#gDash"/></svg></span><span class="lt"><span class="lh"><b>Dashboard</b><span class="pc" id="startPct"></span></span><small>All progress reports &middot; No&nbsp;login&nbsp;needed</small><span class="pbar" id="startBar"><i></i></span></span><span class="chev">&#8250;</span></button>
     <button class="lux" onclick="openLogin()"><span class="ib"><svg><use href="#gUser"/></svg></span><span class="lt"><b>STO Login</b><small>Categories, Ledger, Recovery, Actions</small></span><span class="chev">&#8250;</span></button>
+    <button class="lux" onclick="openStaffLogin()"><span class="ib"><svg class="ic"><use href="#i-users"/></svg></span><span class="lt"><b>Staff Login</b><small>State Tax Inspector &middot; Senior / Junior Clerk</small></span><span class="chev">&#8250;</span></button>
     <button class="lux" onclick="openRoleLogin()"><span class="ib"><svg><use href="#gMon"/></svg></span><span class="lt"><b>Monitoring Officers Login</b><small>JC &middot; DC &middot; Unit Head &middot; Admin</small></span><span class="chev">&#8250;</span></button>
   </div>
   <div id="installBox" class="sec hide" style="text-align:center">
@@ -64,11 +65,36 @@
   <label for="unit">Unit (Ghatak)</label><select id="unit" onchange="fillSto()"></select>
   <label for="sto">STO series</label><select id="sto" onchange="pinBox()"></select>
   <div id="pinWrap" class="hide"><label for="pin">PIN</label><input id="pin" type="password" inputmode="numeric" autocomplete="off"></div>
-  <label for="by">Your name</label><input id="by" type="text" placeholder="e.g. R. K. Patel, STO" autocomplete="name">
+  <div id="byWrap"><label for="by">Your name <small style="font-weight:400;color:#888">(asked only once)</small></label><input id="by" type="text" placeholder="e.g. R. K. Patel" autocomplete="name"></div>
+  <div id="byKnown" class="hint hide"></div>
   <div id="loginErr" class="err"></div>
   <button class="btn" onclick="loginSto()">Continue &rarr;</button>
  </div>
 </div>
+
+<!-- STAFF LOGIN (STI / Clerk) – nothing is remembered on the device -->
+<div id="sStaffLogin" class="v hide">
+ <div class="sheet" style="margin-top:14px">
+  <div class="shh"><span class="ib"><svg class="ic"><use href="#i-users"/></svg></span><div><b>Staff sign in</b><small>For STI and clerks added by their STO</small></div></div>
+  <label for="sfUnit">Unit (Ghatak)</label><select id="sfUnit" onchange="sfFill(1)"></select>
+  <label for="sfSto">Your STO</label><select id="sfSto" onchange="sfFill(2)"></select>
+  <label for="sfName">Your name</label><select id="sfName"></select>
+  <div class="hint" id="sfHint"></div>
+  <label for="sfPin">Your PIN</label><input id="sfPin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="PIN given by your STO">
+  <div id="sfErr" class="err"></div>
+  <button class="btn" onclick="loginStaff()">Open my cases &rarr;</button>
+  <div class="ban" style="margin:12px 0 0"><b>Nothing is remembered on this device</b>Name and PIN are entered every time. Closing the app logs you out.</div>
+ </div>
+</div>
+
+<!-- MY STAFF (STO) -->
+<div id="sStaff" class="v hide padbar"></div>
+<!-- ALLOCATE CASES (STO) -->
+<div id="sAlloc" class="v hide"></div>
+<!-- NEW MONTH – ALLOCATION (STO) -->
+<div id="sNewMon" class="v hide"></div>
+<!-- WORK PENDING WITH STAFF (STO / Unit Head) -->
+<div id="sWork" class="v hide"></div>
 
 <!-- UNIT HEAD / ADMIN LOGIN -->
 <div id="sRole" class="v hide">
@@ -89,6 +115,7 @@
   <div class="lux-list" style="margin-top:6px">
     <button class="lux sm" onclick="openReview('unit')"><span class="ib"><svg class="ic"><use href="#i-sheet"/></svg></span><span class="lt"><b>Unit Review Sheet</b><small id="offUnitT">STO-wise</small></span><span class="pc dl"><svg class="ic"><use href="#i-download"/></svg>PDF</span><span class="chev">&#8250;</span></button>
     <button class="lux sm" onclick="openReview('ALL')"><span class="ib"><svg class="ic"><use href="#i-building"/></svg></span><span class="lt"><b>Division Review Sheet</b><small>All Units · Unit-wise</small></span><span class="pc dl"><svg class="ic"><use href="#i-download"/></svg>PDF</span><span class="chev">&#8250;</span></button>
+    <button class="lux sm hide" id="offWork" onclick="openWork('unit')"><span class="ib"><svg class="ic"><use href="#i-users"/></svg></span><span class="lt"><b>Work pending with staff</b><small>STI &amp; clerks of your Unit · STO-wise</small></span><span class="chev">&#8250;</span></button>
     <button class="lux sm" onclick="openCaseLists()"><span class="ib"><svg class="ic"><use href="#i-list"/></svg></span><span class="lt"><b>Case lists</b><small>Recovery · Actions · Ledger · Categories</small></span><span class="chev">&#8250;</span></button>
     <button class="lux sm" onclick="openDash()"><span class="ib"><svg><use href="#gDash"/></svg></span><span class="lt"><b>Dashboard</b><small>Progress reports</small></span><span class="chev">&#8250;</span></button>
     <button class="lux sm hide" id="offAdmin" onclick="offAdmin()"><span class="ib"><svg class="ic"><use href="#i-calendar"/></svg></span><span class="lt"><b>Month control</b><small>Upload monthly list · category lists · exports</small></span><span class="chev">&#8250;</span></button>
@@ -116,9 +143,10 @@
 
 <!-- STO HOME -->
 <div id="sHome" class="v hide">
-  <div class="who"><span class="ib sm"><svg class="ic"><use href="#i-user"/></svg></span><div style="flex:1;min-width:0"><span>Logged in as</span><b id="whoName"></b></div><button onclick="logout()"><svg class="ic"><use href="#i-logout"/></svg> Change</button></div>
+  <div class="who"><span class="ib sm"><svg class="ic"><use href="#i-user"/></svg></span><div style="flex:1;min-width:0"><span>Logged in as</span><b id="whoName"></b></div><button id="whoBtn" onclick="logout()"><svg class="ic"><use href="#i-logout"/></svg> Change</button></div>
   <div id="syncHome" class="ban info hide"></div>
   <div id="todayW" class="tw hide"></div>
+  <div id="teamCard" class="hide"></div>
   <div id="myStand" class="mys hide" onclick="openDash()"></div>
   <div class="lux-list">
     <button class="lux sm" onclick="openCat()"><span class="ib"><svg class="ic"><use href="#i-folder"/></svg></span><span class="lt"><span class="lh"><b>Case Categories</b><span class="pc" id="tCat"></span></span><small id="tCatS">Decide / confirm categories</small></span><span class="chev">&#8250;</span></button>
@@ -200,6 +228,7 @@
 
 <!-- CASE SUMMARY -->
 <div id="sCase" class="v hide">
+  <div id="hubAlloc" class="hide"></div>
   <div id="hubCat" class="ban hide"></div>
   <div id="hubCards"></div>
   <div class="sec" id="hubLedger"></div>
