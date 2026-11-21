@@ -778,3 +778,31 @@ input.bad{border-color:#C33441!important;background:#FFF7F8!important;color:#A11
 .zpl{margin-top:8px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px 12px}
 .zplh{display:flex;align-items:center;gap:8px;padding:2px 0 6px;border-bottom:1px solid #F0EADB}.zplh .zav{width:30px;height:30px;font-size:11px}
 .zplh b{flex:1;font-size:13px;color:#0B2160}.zplh a{color:#888;cursor:pointer;padding:0 4px}
+
+/* ===== 2.36 · Comparison (Monitoring Officers / Admin) ===== */
+.cmpRow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 14px 0}
+.cmpWho{font-size:11px;font-weight:700;color:#17663A;background:#E6F4EC;border-radius:20px;padding:4px 9px}.cmpWho .ic{width:12px;height:12px;vertical-align:-2px}
+.cmpBtn{width:auto;margin:0;flex:none;font:700 12px Inter,sans-serif;color:#0B2470;background:#fff;border:1.5px solid #0B2470;border-radius:10px;padding:6px 11px;cursor:pointer}
+.cseg{display:flex;gap:5px;margin:12px 14px 0;overflow-x:auto;scrollbar-width:none}.cseg::-webkit-scrollbar{display:none}
+.cseg button{flex:none;width:auto;margin:0;font:700 12px Inter,sans-serif;padding:6px 11px;border-radius:9px;border:1px solid #D8DCEA;background:#fff;color:#0B2470}
+.cseg button.on{background:#0B2470;color:#fff;border-color:#0B2470}
+.crow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 14px 0;font-size:11px;color:#777}
+.csec{margin:12px 16px 0;font-weight:700;color:#0B2160;font-size:14px;display:flex;justify-content:space-between;align-items:baseline}.csec span{font-weight:500;color:#888;font-size:11px}
+.cbc{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 10px 6px;margin:8px 14px 0}
+.cbc h5{margin:0;font-size:12.5px;color:#0B2160}.cbc h5 span{font-weight:500;color:#888;font-size:10.5px}
+.cbars{display:flex;align-items:flex-end;gap:6px;height:92px;margin-top:6px;border-bottom:1.5px solid #E6DCC0}
+.cb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:0}
+.cb em{font-style:normal;font-size:10px;font-weight:700;color:#0B2160;white-space:nowrap}.cb.g em{color:#9A7020}
+.cb i{display:block;width:70%;border-radius:5px 5px 1px 1px;background:linear-gradient(180deg,#2E50C2,#0B2470);min-height:2px}.cb.g i{background:linear-gradient(180deg,#F0D27A,#C9993F)}
+.cbl{display:flex;gap:6px}.cbl div{flex:1;min-width:0;text-align:center;font-size:10.5px;font-weight:700;color:#0B2160;padding-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cbl small{display:block;font-size:9.5px;color:#888;font-weight:500}
+.catt,.cgood{margin:10px 14px 0;border-radius:12px;background:#fff;overflow:hidden}
+.catt{border:1.5px solid #F2B8BE}.cgood{border:1.5px solid #BFE3CD}
+.catt .h,.cgood .h{font-weight:700;font-size:12.5px;padding:8px 11px}.catt .h{background:#FBE5E7;color:#A1182B}.cgood .h{background:#E6F4EC;color:#17663A}
+.catt .h .ic{width:14px;height:14px;vertical-align:-2px}
+.catt .x,.cgood .x{display:flex;justify-content:space-between;gap:8px;padding:7px 11px;font-size:12px}
+.catt .x{border-top:1px solid #F7E1E3}.cgood .x{border-top:1px solid #DDEFE4}
+.catt .x span{color:#C33441;font-weight:700;white-space:nowrap}.cgood .x span{color:#17663A;font-weight:700;white-space:nowrap}
+.catt .x.more{color:#0B2470;font-weight:700;cursor:pointer}.catt .x.ok{color:#17663A;font-weight:600}
+.ctip{margin:10px 14px 0;background:#FFF6DD;border:1px solid #F0D67A;border-radius:12px;padding:9px 12px;font-size:12px;color:#6A5530;line-height:1.5}
+.cpv{max-height:58vh;overflow:auto;border:1px solid #ddd;border-radius:12px;margin-top:4px}.cpv img{display:block;width:100%}

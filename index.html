@@ -93,6 +93,8 @@
 <div id="sAlloc" class="v hide"></div>
 <!-- NEW MONTH – ALLOCATION (STO) -->
 <div id="sNewMon" class="v hide"></div>
+<!-- COMPARISON (Monitoring Officers / Admin – opened from the Dashboard) -->
+<div id="sCmp" class="v hide"></div>
 <!-- WORK PENDING WITH STAFF (STO / Unit Head) -->
 <div id="sWork" class="v hide"></div>
 
@@ -269,6 +271,7 @@
 <!-- DASHBOARD -->
 <div id="sDash" class="v hide">
   <div class="sel"><select id="dMonth" onchange="loadReport(this.value)"></select><select id="dUnit" onchange="R.unit=this.value;renderReport()"></select><select id="dType" onchange="R.type=this.value;renderReport()"><option value="all">All cases</option><option value="A">Active</option><option value="C">Cancelled</option></select></div>
+  <div id="dCmp"></div>
   <div class="rtabs" id="dTabs">
     <button data-t="ov" onclick="setTab('ov')"><svg class="ic"><use href="#i-star"/></svg> Overview</button><button data-t="rec" onclick="setTab('rec')"><svg class="ic"><use href="#i-cash"/></svg> Recovery</button>
     <button data-t="act" onclick="setTab('act')"><svg class="ic"><use href="#i-gavel"/></svg> Actions</button><button data-t="led" onclick="setTab('led')"><svg class="ic"><use href="#i-ledger"/></svg> Ledger</button>

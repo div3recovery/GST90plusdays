@@ -1,5 +1,5 @@
 /* STO Recovery App – Gandhinagar Division · version 2 · Developed by Mehul Ranavasiya */
-var APP_VER = '2.35', API_NEED = '2.35';   // API_NEED = version of Code.gs this app needs
+var APP_VER = '2.36', API_NEED = '2.36';   // API_NEED = version of Code.gs this app needs
 var API_URL = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) || '';
 var S = { meta: null, role: '', unit: '', sto: '', pin: '', by: '', d: null, stack: [], screen: '', head: null, cur: null,
           catF: '', ledF: 'todo', listMode: 'rec', listF: 'all', catSel: '', recMode: '', actType: '', fld: {} };
@@ -45,7 +45,7 @@ function api(fn) {
 
 /* ---------------- navigation ---------------- */
 var VIEWS = ['sStart', 'sLogin', 'sRole', 'sHome', 'sCat', 'sCatForm', 'sLedger', 'sList', 'sRec', 'sAct', 'sCase', 'sAdmin', 'sDash', 'sOff', 'sRev', 'sLists', 'sCorr',
-             'sStaffLogin', 'sStaff', 'sAlloc', 'sNewMon', 'sWork'];
+             'sStaffLogin', 'sStaff', 'sAlloc', 'sNewMon', 'sWork', 'sCmp'];
 var REFRESH = {
   sHome: function () { renderHome(); }, sCat: function () { renderCat(); }, sLedger: function () { renderLedger(); },
   sList: function () { renderList(); }, sCase: function () { if (S.cur) openCase(S.cur.demandId, true); }, sDash: function () { renderReport(); },
@@ -960,6 +960,7 @@ function renderReport() {
   if (R.unit !== 'all' && units.indexOf(R.unit) < 0) R.unit = 'all';
   $('dUnit').innerHTML = '<option value="all">All Units</option>' + units.map(function (u) { return '<option' + (R.unit === u ? ' selected' : '') + '>' + esc(u) + '</option>'; }).join('');
   $('dType').value = R.type;
+  $('dCmp').innerHTML = cmpRowHtml();
   [].forEach.call($('dTabs').children, function (b) { b.classList.toggle('on', b.getAttribute('data-t') === R.tab); });
   $('dAsOn').innerHTML = esc((d.isCurrent ? 'As on ' + d.asOn : d.monthLabel + ' (closed month)') + ' · Target = ' + d.targetPct + '% of pending demand of Recoverable cases') +
     ' · <button class="lnk" style="display:inline;width:auto;margin:0;padding:0 2px;font-size:12px" onclick="loadReport(R.data && !R.data.isCurrent ? R.data.month : \'\')">' + ic('refresh') + ' Refresh</button> · <span style="opacity:.7">App ' + APP_VER + '</span>' + (d.apiVer === API_NEED ? '' : ' · <b style="color:#A1182B">Script not updated (' + esc(d.apiVer || 'old') + ') – Deploy a new version of Code.gs</b>');
@@ -2266,4 +2267,235 @@ function renderWork() {
   h += '<div class="zlegend"><b>Pending</b> = an allocated case with any of: ledger not checked in ' + d.freshDays + ' days · no action this month (STI only – clerks show –) · category not confirmed' + (d.locked ? ' (categories are final this month)' : '') + '.<br>Tap a name to see the pending cases. No ranking – staff are listed STO-wise.' +
     '<br><span class="zp zok">≤ 25%</span> <span class="zp zmd">≤ 50%</span> <span class="zp zlo">above 50%</span></div>';
   $('sWork').innerHTML = h;
+}
+
+/* =====================================================================
+   COMPARISON (v2.36) – Monitoring Officers / Admin only
+   Dashboard → small "Comparison ›" → details (real time)
+   → only if wanted: "Image for WhatsApp" (drawn on a canvas, 1080 px wide)
+   ===================================================================== */
+var CMP = { rep: null, act: null, scope: 'div', all: false, img: null };
+var CMP_DAYS = 6;                                        // "no update in the last 6 days"
+function isOff() { return ['unit', 'jc', 'dc', 'admin'].indexOf(S.role) >= 0 && !!S.pin; }
+function offLabel() { return { unit: 'Unit Head', jc: 'JC', dc: 'DC', admin: 'Admin' }[S.role] || ''; }
+function cmpRowHtml() {
+  return isOff() ? '<div class="cmpRow"><span class="cmpWho">' + ic('check') + ' ' + esc(offLabel()) + ' login</span><button class="cmpBtn" onclick="openCmp()">Comparison &#8250;</button></div>' : '';
+}
+function openCmp() {
+  if (!isOff()) return;
+  busy(true);
+  Promise.all([api('getReport', ''), api('getActivity', S.role, S.role === 'unit' ? (S.ownUnit || '') : '', S.pin)]).then(function (x) {
+    busy(false); CMP.rep = x[0]; CMP.act = x[1]; CMP.all = false;
+    CMP.scope = S.role === 'unit' ? S.ownUnit : (CMP.scope && CMP.scope !== 'div' && unitsOf(CMP.rep.rows).indexOf(CMP.scope) >= 0 ? CMP.scope : 'div');
+    show('sCmp', { mode: 'bar', t: 'Comparison', s: (CMP.rep.division || '') + ' · ' + CMP.rep.monthLabel + ' · real time' });
+    renderCmp();
+  }).catch(function (e) { busy(false); toast(String(e)); });
+}
+function cmpSet(sc) { CMP.scope = sc; CMP.all = false; renderCmp(); }
+
+/* ---------- figures (same as the Dashboard: Recoverable cases, Active + Cancelled) ---------- */
+function cmpData() {
+  var rep = CMP.rep, act = CMP.act, div = CMP.scope === 'div', tp = rep.targetPct;
+  var items = div
+    ? unitsOf(rep.rows).map(function (u) { var g = totals(rep.rows, u, 'all'); g.lab = shortU(u); g.full = u; return g; })
+    : rep.rows.filter(function (r) { return r.unit === CMP.scope; }).map(function (r) { var g = pick(r, 'all'); g.lab = r.sto; g.full = r.sto; g.sto = r.sto; return g; });
+  items = items.filter(function (g) { return g.cases > 0; });
+  items.forEach(function (g) { g.chk = g.cases - g.notChecked; g.tg = g.pending * tp / 100; g.pct = g.tg ? g.recovered * 100 / g.tg : 0; });
+  var has = {}; rep.rows.forEach(function (r) { if (pick(r, 'all').cases > 0 || r.total > 0) has[r.unit + '|' + r.sto] = 1; });
+  var names = rep.names || {}, today = act.today;
+  var days = function (iso) { return iso ? Math.round((new Date(today + 'T12:00:00') - new Date(iso + 'T12:00:00')) / 864e5) : null; };
+  var A = act.rows.filter(function (a) { return has[a.unit + '|' + a.sto] && (div || a.unit === CMP.scope); }).map(function (a) {
+    return { unit: a.unit, sto: a.sto, name: a.name || names[a.unit + '|' + a.sto] || '', d: days(a.last), wk: a.wk, wkRec: a.wkRec, mon: a.mon };
+  });
+  var att = A.filter(function (a) { return a.d == null || a.d >= CMP_DAYS; }).sort(function (a, b) { return (b.d == null ? 9999 : b.d) - (a.d == null ? 9999 : a.d); });
+  var top = A.filter(function (a) { return a.wk > 0; }).sort(function (a, b) { return b.wk - a.wk || b.wkRec - a.wkRec; }).slice(0, div ? 4 : 3);
+  var idle;
+  if (div) { var mu = {}; A.forEach(function (a) { mu[a.unit] = (mu[a.unit] || 0) + a.mon; }); idle = Object.keys(mu).filter(function (u) { return !mu[u]; }); }
+  else idle = A.filter(function (a) { return !a.mon; }).map(function (a) { return a.sto + (a.name ? ' (' + a.name + ')' : ''); });
+  return {
+    div: div, title: div ? (rep.division || 'Division') : CMP.scope,
+    rec: items.slice().sort(function (a, b) { return b.recovered - a.recovered || b.pct - a.pct; }).map(function (g) { return { k: g.lab, v: g.recovered, top: '₹' + kShort(g.recovered), sub: g.pct.toFixed(1) + '%' }; }),
+    led: items.slice().sort(function (a, b) { return (b.chk / b.cases) - (a.chk / a.cases); }).map(function (g) { return { k: g.lab, v: g.chk / g.cases, top: Math.round(g.chk * 100 / g.cases) + '%', sub: g.chk + ' / ' + g.cases }; }),
+    act: items.slice().sort(function (a, b) { return b.actions - a.actions; }).map(function (g) { return { k: g.lab, v: g.actions, top: String(g.actions), sub: (g.actions / g.cases).toFixed(1) + ' / case' }; }),
+    att: att, top: top, idle: idle
+  };
+}
+function kShort(n) { n = Number(n) || 0; if (n >= 1e7) return (n / 1e7).toFixed(2) + ' Cr'; if (n >= 1e5) return (n / 1e5).toFixed(2) + ' L'; if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k'; return String(Math.round(n)); }
+function attDays(a) { return a.d == null ? 'no entry' : a.d + ' d'; }
+function topVal(a) { return a.wk + ' entr' + (a.wk === 1 ? 'y' : 'ies') + (a.wkRec ? ' · ₹' + kShort(a.wkRec) : ''); }
+function idleLine(c) {
+  if (!c.idle.length) return '';
+  return (c.div ? c.idle.join(' and ') : c.idle.join(', ')) + ': no recovery, ledger check or action entered this month. Please start today.';
+}
+
+/* ---------- screen ---------- */
+function cmpBarsHtml(t, sub, items) {
+  var mx = Math.max.apply(null, items.map(function (x) { return x.v; }).concat([1e-9]));
+  return '<div class="cbc"><h5>' + t + ' <span>· ' + sub + '</span></h5><div class="cbars">' + items.map(function (x, i) {
+    return '<div class="cb' + (i === 0 && x.v > 0 ? ' g' : '') + '"><em>' + esc(x.top) + '</em><i style="height:' + Math.max(x.v / mx * 78, 2) + '%"></i></div>'; }).join('') +
+    '</div><div class="cbl">' + items.map(function (x) { return '<div>' + esc(x.k) + '<small>' + esc(x.sub) + '</small></div>'; }).join('') + '</div></div>';
+}
+function renderCmp() {
+  var c = cmpData(), rep = CMP.rep, h = '';
+  if (S.role !== 'unit') h += '<div class="cseg">' + ['div'].concat(unitsOf(rep.rows)).map(function (u) {
+    return '<button class="' + (CMP.scope === u ? 'on' : '') + '" onclick="cmpSet(\'' + esc(u) + '\')">' + (u === 'div' ? 'Division' : esc(shortU(u))) + '</button>'; }).join('') + '</div>';
+  h += '<div class="crow"><span>' + esc(c.title) + ' · as on ' + esc(CMP.act.asOn) + '</span><button class="cmpBtn" onclick="cmpImage()">Image for WhatsApp</button></div>';
+  if (!c.rec.length) h += '<div class="empty">No Recoverable cases.</div>';
+  else h += '<div class="csec">' + (c.div ? 'Unit-wise' : 'STO-wise') + ' comparison <span>gold = highest</span></div>' +
+    cmpBarsHtml('Recovery made', '% of target below', c.rec) +
+    cmpBarsHtml('Ledgers checked', 'Recoverable cases, last ' + rep.freshDays + ' days', c.led) +
+    cmpBarsHtml('Actions taken', 'per case below', c.act);
+  var shown = CMP.all ? c.att : c.att.slice(0, 6);
+  h += '<div class="catt"><div class="h">' + ic('alert') + ' No update in the last ' + CMP_DAYS + ' days (' + c.att.length + ')</div>' +
+    (c.att.length ? shown.map(function (a) { return '<div class="x"><b>' + (c.div ? esc(shortU(a.unit)) + ' · ' : '') + esc(a.sto) + (a.name ? ' · ' + esc(a.name) : '') + '</b><span>' + esc(attDays(a)) + '</span></div>'; }).join('') +
+      (c.att.length > shown.length ? '<div class="x more" onclick="CMP.all=true;renderCmp()">+ ' + (c.att.length - shown.length) + ' more · tap to see all</div>' : '') :
+      '<div class="x ok">All STOs made an entry in the last ' + CMP_DAYS + ' days ✓</div>') + '</div>';
+  if (c.top.length) h += '<div class="cgood"><div class="h">★ Most active this week</div>' + c.top.map(function (a) {
+    return '<div class="x"><b>' + (c.div ? esc(shortU(a.unit)) + ' · ' : '') + esc(a.sto) + (a.name ? ' · ' + esc(a.name) : '') + '</b><span>' + esc(topVal(a)) + '</span></div>'; }).join('') + '</div>';
+  if (c.idle.length) h += '<div class="ctip">' + esc(idleLine(c)) + '</div>';
+  h += '<p class="hint" style="margin:12px 16px 20px;text-align:center">Entries by STOs and their staff are counted. Admin entries are not counted.</p>';
+  $('sCmp').innerHTML = h;
+}
+
+/* ---------- WhatsApp image (canvas) ---------- */
+function cmpImage() {
+  var c = cmpData(); busy(true);
+  var logo = new Image(); logo.src = 'logo-badge-sm.png';
+  var fonts = document.fonts && document.fonts.load ? Promise.all(['400 12px Inter', '600 12px Inter', '700 12px Inter'].map(function (f) { return document.fonts.load(f); })).catch(function () {}) : Promise.resolve();
+  var ready = new Promise(function (res) { logo.onload = function () { res(true); }; logo.onerror = function () { res(false); }; setTimeout(function () { res(false); }, 3000); });
+  Promise.all([fonts, ready]).then(function (x) {
+    var hasLogo = x[1], cv = document.createElement('canvas'), ctx = cv.getContext('2d');
+    var H = cmpDraw(ctx, c, hasLogo ? logo : null, true);           // measure
+    cv.width = 1080; cv.height = Math.ceil(H * 2); ctx = cv.getContext('2d'); ctx.scale(2, 2);
+    cmpDraw(ctx, c, hasLogo ? logo : null, false);
+    busy(false); cmpPreview(cv, c);
+  }).catch(function (e) { busy(false); toast('Could not make the image: ' + e); });
+}
+function cmpDraw(ctx, c, logo, measure) {
+  var W = 540, M = 12, y = 0, rep = CMP.rep, F = 'Inter, "Segoe UI", Roboto, Arial, sans-serif';
+  var font = function (w, s) { ctx.font = w + ' ' + s + 'px ' + F; };
+  var rr = function (x, y0, w, h, r, fill, stroke) {
+    if (measure) return; ctx.beginPath(); ctx.moveTo(x + r, y0); ctx.arcTo(x + w, y0, x + w, y0 + h, r); ctx.arcTo(x + w, y0 + h, x, y0 + h, r); ctx.arcTo(x, y0 + h, x, y0, r); ctx.arcTo(x, y0, x + w, y0, r); ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); } };
+  var txt = function (s, x, y0, col, align) { if (measure) return; ctx.fillStyle = col; ctx.textAlign = align || 'left'; ctx.fillText(s, x, y0); };
+  var fit = function (s, w) { s = String(s); if (ctx.measureText(s).width <= w) return s; while (s.length > 1 && ctx.measureText(s + '…').width > w) s = s.slice(0, -1); return s + '…'; };
+  var wrap = function (s, w) { var words = String(s).split(' '), lines = [], l = ''; words.forEach(function (wd) { var t = l ? l + ' ' + wd : wd; if (ctx.measureText(t).width > w && l) { lines.push(l); l = wd; } else l = t; }); if (l) lines.push(l); return lines; };
+  // background
+  if (!measure) { ctx.fillStyle = '#F6F7FB'; ctx.fillRect(0, 0, W, 5000); }
+  // header
+  if (!measure) {
+    var g = ctx.createLinearGradient(0, 0, W, 118); g.addColorStop(0, '#17389A'); g.addColorStop(.6, '#0B2470'); g.addColorStop(1, '#081A55');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, 118);
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, 118); ctx.clip(); ctx.strokeStyle = 'rgba(217,178,98,.13)'; ctx.lineWidth = 30; ctx.beginPath(); ctx.arc(W - 10, 20, 100, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+  }
+  rr(18, 16, 48, 48, 12, '#FFFFFF', null);
+  if (!measure) { ctx.strokeStyle = '#D9B262'; ctx.lineWidth = 2; ctx.stroke(); if (logo) ctx.drawImage(logo, 22, 20, 40, 40); }
+  font(700, 19); txt(fit((c.div ? c.title : c.title) + ' · Weekly position', W - 100), 78, 40, '#FFFFFF');
+  font(400, 12); txt('90+ Days GST Recovery · ' + (c.div ? 'Unit-wise' : 'STO-wise' + (S.role === 'unit' ? ' · for Unit Head' : '')), 78, 58, 'rgba(255,255,255,.85)');
+  var mo = rep.monthLabel + (rep.isCurrent ? ' · Day ' + Number(String(CMP.act.today).slice(8, 10)) + ' of ' + new Date(Number(rep.month.slice(0, 4)), Number(rep.month.slice(5, 7)), 0).getDate() : '');
+  font(700, 12); var mw = ctx.measureText(mo).width + 22; rr(18, 80, mw, 24, 12, '#D9B262', null); txt(mo, 29, 96, '#0B2160');
+  font(400, 12); txt('as on ' + CMP.act.asOn, W - 18, 96, 'rgba(255,255,255,.9)', 'right');
+  y = 118 + 22;
+  // section title
+  font(700, 14); txt((c.div ? 'Unit-wise' : 'STO-wise') + ' comparison', M, y, '#0B2160');
+  font(400, 10.5); txt((c.div ? 'fair for Unit size · ' : '') + 'gold = highest', W - M, y, '#888888', 'right');
+  y += 10;
+  var bars = function (t, sub, items) {
+    var h = 168, x0 = M, w = W - 2 * M; rr(x0, y, w, h, 12, '#FFFFFF', '#E6E1D2');
+    font(700, 12.5); txt(t, x0 + 12, y + 20, '#0B2160'); var tw = ctx.measureText(t).width; font(400, 10.5); txt('· ' + sub, x0 + 16 + tw, y + 20, '#888888');
+    var n = Math.max(items.length, 1), area = w - 24, cw = area / n, bw = Math.min(44, cw * .62), base = y + 122, top = y + 44, mx = Math.max.apply(null, items.map(function (x) { return x.v; }).concat([1e-9]));
+    if (!measure) { ctx.strokeStyle = '#E6DCC0'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x0 + 10, base + .5); ctx.lineTo(x0 + w - 10, base + .5); ctx.stroke(); }
+    items.forEach(function (it, i) {
+      var cx = x0 + 12 + cw * i + cw / 2, bh = Math.max((base - top - 14) * it.v / mx, 3), gold = i === 0 && it.v > 0;
+      if (!measure) { var gg = ctx.createLinearGradient(0, base - bh, 0, base); if (gold) { gg.addColorStop(0, '#F0D27A'); gg.addColorStop(1, '#C9993F'); } else { gg.addColorStop(0, '#2E50C2'); gg.addColorStop(1, '#0B2470'); }
+        rr(cx - bw / 2, base - bh, bw, bh, Math.min(5, bh / 2), gg, null); }
+      font(700, n > 7 ? 9.5 : 11); txt(it.top, cx, base - bh - 5, gold ? '#9A7020' : '#0B2160', 'center');
+      font(700, n > 7 ? 9.5 : 11); txt(fit(it.k, cw - 2), cx, base + 15, '#0B2160', 'center');
+      font(400, n > 7 ? 8.5 : 9.5); txt(fit(it.sub, cw - 2), cx, base + 28, '#888888', 'center');
+    });
+    y += h + 8;
+  };
+  if (c.rec.length) { bars('Recovery made', '% of target below', c.rec); bars('Ledgers checked', '% of Recoverable cases, last ' + rep.freshDays + ' days', c.led); bars('Actions taken', 'per case below', c.act); }
+  // need attention
+  y += 4;
+  var chips = function (list, x0, w, y0, red) {             // 2 columns of chips, returns height used
+    var cw = (w - 6) / 2, ch = 24, rows = Math.ceil(list.length / 2);
+    list.forEach(function (a, i) {
+      var cx = x0 + (i % 2) * (cw + 6), cy = y0 + Math.floor(i / 2) * (ch + 5);
+      rr(cx, cy, cw, ch, 7, '#FFFFFF', red ? '#F2D5D8' : '#CBE7D6');
+      font(800 > 0 ? 700 : 700, 10.5); var val = a[1]; var vw = ctx.measureText(val).width;
+      txt(val, cx + cw - 8, cy + 16, red ? '#C33441' : '#17663A', 'right');
+      font(600, 10.5); txt(fit(a[0], cw - vw - 20), cx + 8, cy + 16, '#1B2238');
+    });
+    return rows ? rows * (ch + 5) - 5 : 0;
+  };
+  var attH0 = y, title = '⚠  STOs with no update in the last ' + CMP_DAYS + ' days (' + c.att.length + ')';
+  var inner = 0, groups = [];
+  if (c.att.length && c.div) { var gu = {}; c.att.forEach(function (a) { (gu[a.unit] = gu[a.unit] || []).push(a); }); groups = unitsOf(rep.rows).filter(function (u) { return gu[u]; }).map(function (u) { return [u, gu[u]]; }); }
+  // measure body height
+  var bodyH = 0;
+  if (!c.att.length) bodyH = 34;
+  else if (c.div) groups.forEach(function (gp) { bodyH += Math.max(Math.ceil(gp[1].length / 2) * 29 - 5 + 12, 30); });
+  else bodyH = Math.ceil(c.att.length / 2) * 29 - 5 + 14;
+  var boxH = 30 + bodyH;
+  rr(M, y, W - 2 * M, boxH, 12, '#FFFFFF', '#F2B8BE');
+  if (!measure) { ctx.save(); ctx.beginPath(); ctx.rect(M, y, W - 2 * M, 30); ctx.clip(); rr(M, y, W - 2 * M, 40, 12, '#FBE5E7', null); ctx.restore(); }
+  font(700, 12.5); txt(title, M + 12, y + 20, '#A1182B');
+  var by = y + 30;
+  if (!measure) { var x1 = M + 1, y1 = y + 1, w1 = W - 2 * M - 2, h1 = boxH - 2, r1 = 11; ctx.save(); ctx.beginPath(); ctx.moveTo(x1 + r1, y1); ctx.arcTo(x1 + w1, y1, x1 + w1, y1 + h1, r1); ctx.arcTo(x1 + w1, y1 + h1, x1, y1 + h1, r1); ctx.arcTo(x1, y1 + h1, x1, y1, r1); ctx.arcTo(x1, y1, x1 + w1, y1, r1); ctx.closePath(); ctx.clip(); }
+  if (!c.att.length) { font(600, 11.5); txt('All STOs made an entry in the last ' + CMP_DAYS + ' days ✓', M + 12, by + 21, '#17663A'); }
+  else if (c.div) groups.forEach(function (gp) {
+    var gh = Math.max(Math.ceil(gp[1].length / 2) * 29 - 5 + 12, 30);
+    if (!measure) { ctx.fillStyle = '#F7E1E3'; ctx.fillRect(M + 1, by, W - 2 * M - 2, 1); ctx.fillStyle = '#FFF5F6'; ctx.fillRect(M + 1, by + 1, 92, gh - 1); }
+    font(700, 10.5); wrap(gp[0], 82).forEach(function (l, k) { txt(l, M + 9, by + 17 + k * 13, '#A1182B'); });
+    chips(gp[1].map(function (a) { return [a.sto + (a.name ? ' · ' + a.name : ''), attDays(a)]; }), M + 100, W - 2 * M - 108, by + 6, true);
+    by += gh;
+  });
+  else chips(c.att.map(function (a) { return [a.sto + (a.name ? ' · ' + a.name : ''), attDays(a)]; }), M + 8, W - 2 * M - 16, by + 7, true);
+  if (!measure) ctx.restore();
+  y += boxH + 9;
+  // most active
+  if (c.top.length) {
+    var tH = 30 + Math.ceil(c.top.length / 2) * 29 - 5 + 14;
+    rr(M, y, W - 2 * M, tH, 12, '#FFFFFF', '#BFE3CD');
+    if (!measure) { ctx.save(); ctx.beginPath(); ctx.rect(M, y, W - 2 * M, 30); ctx.clip(); rr(M, y, W - 2 * M, 40, 12, '#E6F4EC', null); ctx.restore(); }
+    font(700, 12.5); txt('★  Most active this week', M + 12, y + 20, '#17663A');
+    chips(c.top.map(function (a) { return [(c.div ? shortU(a.unit) + ' · ' : '') + a.sto + (a.name ? ' · ' + a.name : ''), topVal(a)]; }), M + 8, W - 2 * M - 16, y + 37, false);
+    y += tH + 9;
+  }
+  // yellow line
+  var il = idleLine(c);
+  if (il) {
+    font(400, 11.5); var lines = wrap(il, W - 2 * M - 24), th = 16 + lines.length * 16;
+    rr(M, y, W - 2 * M, th, 12, '#FFF6DD', '#F0D67A');
+    lines.forEach(function (l, k) { txt(l, M + 12, y + 20 + k * 16, '#6A5530'); });
+    y += th + 9;
+  }
+  // footer
+  y += 6;
+  if (!measure) { ctx.strokeStyle = '#D8D2C2'; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(M, y); ctx.lineTo(W - M, y); ctx.stroke(); ctx.setLineDash([]); }
+  font(400, 10); txt('90+ Days GST Recovery app', M, y + 18, '#777777'); txt(rep.division || '', W - M, y + 18, '#777777', 'right');
+  return y + 30;
+}
+function cmpPreview(cv, c) {
+  var name = 'Comparison-' + (c.div ? 'Division' : shortU(c.title)) + '-' + CMP.act.today + '.png';
+  cv.toBlob(function (blob) {
+    CMP.img = { blob: blob, name: name };
+    var url = URL.createObjectURL(blob), ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'cmpOv';
+    ov.innerHTML = '<div class="sheet"><div class="grab"></div><b class="zst">WhatsApp image · ' + esc(c.div ? 'Division' : c.title) + '</b><div class="zss">Made from these figures · ' + esc(CMP.act.asOn) + '</div>' +
+      '<div class="cpv"><img src="' + url + '" alt="Comparison image"></div>' +
+      '<div class="two"><button class="btn sec2" onclick="cmpDownload()">' + ic('download') + ' Download</button><button class="btn" onclick="cmpShare()">' + ic('share') + ' Share</button></div></div>';
+    ov.onclick = function (e) { if (e.target === ov) ov.remove(); };
+    document.body.appendChild(ov);
+  }, 'image/png');
+}
+function cmpDownload() {
+  var a = document.createElement('a'); a.href = URL.createObjectURL(CMP.img.blob); a.download = CMP.img.name;
+  document.body.appendChild(a); a.click(); a.remove(); toast('Image saved ✓');
+}
+function cmpShare() {
+  var f = null; try { f = new File([CMP.img.blob], CMP.img.name, { type: 'image/png' }); } catch (e) {}
+  if (f && navigator.canShare && navigator.canShare({ files: [f] })) {
+    navigator.share({ files: [f], title: 'Recovery comparison' }).catch(function () {});
+  } else { cmpDownload(); toast('Image saved – open WhatsApp and attach it from the gallery / Downloads'); }
 }
